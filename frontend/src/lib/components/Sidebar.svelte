@@ -47,7 +47,7 @@
         </button>
         <button
             onclick={toggleSidebar}
-            class="p-1 hover:bg-white/5 rounded-md text-muted-foreground transition-colors md:hidden"
+            class="p-1 hover:bg-white/5 rounded-md text-muted-foreground transition-colors"
         >
             <PanelLeftClose size={20} />
         </button>

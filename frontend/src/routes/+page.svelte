@@ -5,16 +5,22 @@
     import { chatState } from "$lib/state/chat.svelte";
     import AgentOrb from "$lib/components/AgentOrb.svelte";
     import { fade } from "svelte/transition";
+
+    let sidebarOpen = $state(true);
 </script>
 
 <div
     class="flex h-full overflow-hidden bg-background text-foreground font-sans"
 >
     <!-- Sidebar -->
-    <Sidebar />
+    <Sidebar bind:isOpen={sidebarOpen} />
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col relative z-0 overflow-hidden h-full">
+    <main
+        class="flex-1 flex flex-col relative z-0 overflow-hidden h-full transition-all duration-300 ease-in-out"
+        class:ml-64={sidebarOpen}
+        class:ml-0={!sidebarOpen}
+    >
         <!-- Top Bar (Persistent Agent Status) -->
         <div class="absolute top-4 right-4 z-50 pointer-events-none">
             {#if chatState.messages.length > 0}
