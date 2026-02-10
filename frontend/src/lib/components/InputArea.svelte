@@ -91,7 +91,7 @@
             onkeydown={handleKeydown}
             disabled={chatState.isLoading}
             placeholder="Ask anything..."
-            class="flex-1 bg-transparent border-0 ring-0 focus:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-3 min-h-[44px] max-h-[200px] scrollbar-none disabled:opacity-50 text-base"
+            class="flex-1 bg-transparent border-0 outline-none ring-0 focus:ring-0 focus:outline-none text-foreground placeholder:text-muted-foreground resize-none py-3 min-h-[44px] max-h-[200px] scrollbar-none disabled:opacity-50 text-base"
             rows="1"
         ></textarea>
 
