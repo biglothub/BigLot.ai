@@ -3,6 +3,7 @@
     import ChatArea from "$lib/components/ChatArea.svelte";
     import InputArea from "$lib/components/InputArea.svelte";
     import { chatState } from "$lib/state/chat.svelte";
+    import AgentOrb from "$lib/components/AgentOrb.svelte";
     import { fade } from "svelte/transition";
 </script>
 
@@ -14,16 +15,39 @@
 
     <!-- Main Content -->
     <main class="flex-1 flex flex-col relative z-0 overflow-hidden h-full">
+        <!-- Top Bar (Persistent Agent Status) -->
+        <div class="absolute top-4 right-4 z-50 pointer-events-none">
+            {#if chatState.messages.length > 0}
+                <AgentOrb
+                    size="sm"
+                    status={chatState.isLoading ? "analyzing" : "idle"}
+                    showLabel={false}
+                />
+            {/if}
+        </div>
+
         {#if chatState.messages.length === 0}
             <!-- Empty State / Home Page -->
             <div
                 class="flex-1 flex flex-col items-center justify-center p-4"
                 transition:fade
             >
+                <div class="mb-12 scale-150">
+                    <AgentOrb
+                        size="lg"
+                        status={chatState.isLoading ? "analyzing" : "idle"}
+                    />
+                </div>
+
                 <div class="mb-8 text-center">
-                    <h1 class="text-3xl font-semibold text-white mb-2">
-                        Ready when you are.
+                    <h1
+                        class="text-3xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60 mb-2"
+                    >
+                        BigLot.ai
                     </h1>
+                    <p class="text-muted-foreground">
+                        Autonomous Trading Agent Platform
+                    </p>
                 </div>
 
                 <div class="w-full max-w-3xl">
