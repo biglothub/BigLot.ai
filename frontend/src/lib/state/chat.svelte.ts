@@ -3,6 +3,7 @@ import { supabase } from '$lib/supabase';
 export type Message = {
     role: 'user' | 'assistant' | 'system';
     content: string;
+    image_url?: string;
 };
 
 export type Chat = {
@@ -16,6 +17,7 @@ class ChatState {
     allChats = $state<Chat[]>([]);
     currentChatId = $state<string | null>(null);
     isLoading = $state(false);
+    selectedImage = $state<string | null>(null);
 
     // Load list of chats for sidebar
     async loadAllChats() {
@@ -65,14 +67,15 @@ class ChatState {
         }
     }
 
-    async sendMessage(content: string) {
-        if (!content.trim()) return;
+    async sendMessage(content: string, imageUrl?: string) {
+        if (!content.trim() && !imageUrl) return;
 
         // 1. Create chat session in Supabase if it doesn't exist
         if (!this.currentChatId) {
+            const titleText = content || "Image Analysis";
             const { data, error } = await supabase
                 .from('chats')
-                .insert({ title: content.slice(0, 30) + (content.length > 30 ? '...' : '') })
+                .insert({ title: titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '') })
                 .select()
                 .single();
 
@@ -87,11 +90,15 @@ class ChatState {
         const chatId = this.currentChatId;
 
         // 2. Add and Save user message
-        this.messages.push({ role: 'user', content });
+        const userMsg: Message = { role: 'user', content, image_url: imageUrl };
+        this.messages.push(userMsg);
+        this.selectedImage = null; // Clear after sending
+
         await supabase.from('messages').insert({
             chat_id: chatId,
             role: 'user',
-            content: content
+            content: content,
+            image_url: imageUrl // Assuming column exists or will be added
         });
 
         this.isLoading = true;
@@ -135,6 +142,10 @@ class ChatState {
         } finally {
             this.isLoading = false;
         }
+    }
+
+    clearSelectedImage() {
+        this.selectedImage = null;
     }
 }
 

@@ -12,12 +12,31 @@
     import { chatState } from "$lib/state/chat.svelte";
 
     let input = $state("");
+    let fileInput: HTMLInputElement;
 
     async function handleSend() {
-        if (!input.trim() || chatState.isLoading) return;
+        if ((!input.trim() && !chatState.selectedImage) || chatState.isLoading)
+            return;
         const content = input;
+        const imageUrl = chatState.selectedImage;
         input = ""; // Clear immediately
-        await chatState.sendMessage(content);
+        chatState.clearSelectedImage();
+        await chatState.sendMessage(content, imageUrl || undefined);
+    }
+
+    function handleFileClick() {
+        fileInput?.click();
+    }
+
+    async function handleFileChange(e: Event) {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            chatState.selectedImage = e.target?.result as string;
+        };
+        reader.readAsDataURL(file);
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -29,15 +48,41 @@
 </script>
 
 <div class="w-full max-w-3xl mx-auto p-4">
+    <!-- Image Preview -->
+    {#if chatState.selectedImage}
+        <div class="mb-2 relative inline-block group">
+            <img
+                src={chatState.selectedImage}
+                alt="Selected"
+                class="w-20 h-20 object-cover rounded-xl border border-white/20"
+            />
+            <button
+                onclick={() => chatState.clearSelectedImage()}
+                class="absolute -top-2 -right-2 bg-secondary text-foreground p-1 rounded-full border border-white/10 hover:bg-destructive hover:text-white transition-colors"
+                title="Remove Image"
+            >
+                <Plus size={12} class="rotate-45" />
+            </button>
+        </div>
+    {/if}
+
     <div
         class="relative bg-secondary/80 backdrop-blur-xl border border-white/10 focus-within:border-white/20 transition-all rounded-[2rem] shadow-2xl flex items-end p-2 gap-2"
     >
         <!-- Left Actions -->
+        <input
+            type="file"
+            accept="image/*"
+            bind:this={fileInput}
+            onchange={handleFileChange}
+            class="hidden"
+        />
         <button
+            onclick={handleFileClick}
             class="p-2.5 text-muted-foreground hover:text-primary hover:bg-white/5 rounded-full transition-colors mb-0.5"
-            title="Add Attachment"
+            title="Add Image"
         >
-            <Plus size={20} />
+            <Image size={20} />
         </button>
 
         <!-- Textarea -->
@@ -52,17 +97,14 @@
 
         <!-- Right Actions -->
         <div class="flex items-center gap-1 mb-0.5">
-            <!-- <button class="p-2 text-muted-foreground hover:text-primary hover:bg-white/5 rounded-full transition-colors" title="Web Search">
-        <Globe size={18} />
-      </button> -->
-
             <button
                 onclick={handleSend}
                 class="p-2.5 rounded-full transition-all duration-200
-          {input.trim() && !chatState.isLoading
+          {(input.trim() || chatState.selectedImage) && !chatState.isLoading
                     ? 'bg-primary text-secondary font-bold hover:opacity-90'
                     : 'bg-white/5 text-muted-foreground cursor-not-allowed'}"
-                disabled={!input.trim() || chatState.isLoading}
+                disabled={(!input.trim() && !chatState.selectedImage) ||
+                    chatState.isLoading}
             >
                 {#if chatState.isLoading}
                     <Loader2 size={18} class="animate-spin" />

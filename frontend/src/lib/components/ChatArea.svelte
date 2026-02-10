@@ -59,7 +59,21 @@
                             {message.role === "assistant" ? "BigLot.ai" : "You"}
                         </div>
 
-                        <div class="text-base text-foreground leading-relaxed">
+                        <div
+                            class="text-base text-foreground leading-relaxed flex flex-col gap-3"
+                        >
+                            {#if message.image_url}
+                                <div
+                                    class="relative max-w-sm rounded-2xl overflow-hidden border border-white/10 group"
+                                >
+                                    <img
+                                        src={message.image_url}
+                                        alt="Attached preview"
+                                        class="w-full h-auto max-h-[400px] object-cover"
+                                    />
+                                </div>
+                            {/if}
+
                             {#if message.role === "assistant"}
                                 <Markdown content={message.content} />
                             {:else}

@@ -11,8 +11,19 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Create formatted messages for OpenAI
     const formattedMessages = [
-        { role: "system", content: "You are BigLot.ai, an advanced AI assistant specifically designed for traders. You provide accurate market analysis, risk management advice, and trading strategies. Your tone is professional, concise, and objective. You use markdown to format your responses effectively." },
-        ...messages
+        { role: "system", content: "You are BigLot.ai, an advanced AI assistant specifically designed for traders. You provide accurate market analysis, risk management advice, and trading strategies. Your tone is professional, concise, and objective. You use markdown to format your responses effectively. You can analyze images of charts and market data provided by the user." },
+        ...messages.map((m: any) => {
+            if (m.image_url) {
+                return {
+                    role: m.role,
+                    content: [
+                        { type: "text", text: m.content || "Analyze this image." },
+                        { type: "image_url", image_url: { url: m.image_url } }
+                    ]
+                };
+            }
+            return { role: m.role, content: m.content };
+        })
     ];
 
     const stream = await openai.chat.completions.create({
