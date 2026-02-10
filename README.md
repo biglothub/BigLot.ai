@@ -1,4 +1,4 @@
-# BigLot.ai - Trader's Personal AI Assistant 📈🤖
+# BigLot.ai - Trader's Personal AI Assistant 📈🤖 #BigLot
 
 BigLot.ai is a modern, trader-focused AI chat application designed to analyze markets, provide trading insights, and act as a 24/7 personal trading assistant.
 
