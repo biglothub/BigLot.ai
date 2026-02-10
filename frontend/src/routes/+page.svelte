@@ -8,7 +8,7 @@
 </script>
 
 <div
-    class="flex h-screen overflow-hidden bg-background text-foreground font-sans"
+    class="flex h-full overflow-hidden bg-background text-foreground font-sans"
 >
     <!-- Sidebar -->
     <Sidebar />
