@@ -4,15 +4,23 @@
         MessageSquare,
         Settings,
         LogOut,
+        Trash2,
         PanelLeftClose,
         PanelLeftOpen,
     } from "lucide-svelte";
+    import { chatState } from "$lib/state/chat.svelte";
+    import { fade } from "svelte/transition";
+    import { onMount } from "svelte";
 
-    let isOpen = $state(true);
+    let { isOpen = $bindable(true) } = $props();
 
     function toggleSidebar() {
         isOpen = !isOpen;
     }
+
+    onMount(() => {
+        chatState.loadAllChats();
+    });
 </script>
 
 <div
@@ -26,8 +34,9 @@
     <div
         class="p-4 flex items-center justify-between border-b border-border/50"
     >
-        <div
-            class="flex items-center gap-2 font-bold text-xl tracking-tight text-primary"
+        <button
+            onclick={() => chatState.newChat()}
+            class="flex items-center gap-2 font-bold text-xl tracking-tight text-primary hover:opacity-80 transition-opacity"
         >
             {#if isOpen}
                 <span
@@ -35,7 +44,7 @@
                     >BigLot.ai</span
                 >
             {/if}
-        </div>
+        </button>
         <button
             onclick={toggleSidebar}
             class="p-1 hover:bg-white/5 rounded-md text-muted-foreground transition-colors md:hidden"
@@ -47,6 +56,7 @@
     <!-- New Chat Button -->
     <div class="p-3">
         <button
+            onclick={() => chatState.newChat()}
             class="w-full flex items-center gap-2 px-4 py-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-all duration-200 group"
         >
             <Plus
@@ -61,40 +71,54 @@
     <div
         class="flex-1 overflow-y-auto px-3 py-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
     >
-        <div
-            class="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider"
-        >
-            Today
-        </div>
-
-        {#each Array(5) as _, i}
-            <button
-                class="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-foreground/80 hover:bg-white/5 rounded-md transition-colors text-left group"
+        {#if chatState.allChats.length > 0}
+            <div
+                class="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider"
             >
-                <MessageSquare
-                    size={16}
-                    class="text-muted-foreground group-hover:text-primary transition-colors"
-                />
-                <span class="truncate">Trading Analysis for BTC...</span>
-            </button>
-        {/each}
+                History
+            </div>
 
-        <div
-            class="px-2 py-1 mt-4 text-xs font-medium text-muted-foreground uppercase tracking-wider"
-        >
-            Yesterday
-        </div>
-        {#each Array(3) as _, i}
-            <button
-                class="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-foreground/80 hover:bg-white/5 rounded-md transition-colors text-left group"
+            {#each chatState.allChats as chat}
+                <div
+                    onclick={() => chatState.loadChat(chat.id)}
+                    class="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-md transition-colors text-left group relative pr-8 cursor-pointer
+                    {chatState.currentChatId === chat.id
+                        ? 'bg-primary/20 text-primary'
+                        : 'text-foreground/80 hover:bg-white/5'}"
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) =>
+                        e.key === "Enter" && chatState.loadChat(chat.id)}
+                >
+                    <MessageSquare
+                        size={16}
+                        class="text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0
+                        {chatState.currentChatId === chat.id
+                            ? 'text-primary'
+                            : ''}"
+                    />
+                    <span class="truncate flex-1">{chat.title}</span>
+
+                    <button
+                        class="absolute right-2 p-1 text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-10"
+                        title="Delete Chat"
+                        onclick={(e) => {
+                            e.stopPropagation();
+                            if (confirm("Delete this chat?"))
+                                chatState.deleteChat(chat.id);
+                        }}
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                </div>
+            {/each}
+        {:else}
+            <div
+                class="px-4 py-8 text-center text-sm text-muted-foreground italic"
             >
-                <MessageSquare
-                    size={16}
-                    class="text-muted-foreground group-hover:text-primary transition-colors"
-                />
-                <span class="truncate">Gold Price Prediction...</span>
-            </button>
-        {/each}
+                No chat history yet
+            </div>
+        {/if}
     </div>
 
     <!-- Footer -->

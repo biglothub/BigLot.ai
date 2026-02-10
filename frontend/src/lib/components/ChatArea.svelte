@@ -3,22 +3,30 @@
         Bot,
         User,
         Copy,
+        Check,
         ThumbsUp,
         ThumbsDown,
         RefreshCcw,
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
+    import Markdown from "./Markdown.svelte";
 
-    // No local messages, use global state
+    let copiedIndex = $state<number | null>(null);
+
+    function copyToClipboard(text: string, index: number) {
+        navigator.clipboard.writeText(text);
+        copiedIndex = index;
+        setTimeout(() => {
+            if (copiedIndex === index) copiedIndex = null;
+        }, 2000);
+    }
 </script>
 
 <div
     class="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
 >
     <div class="max-w-3xl mx-auto space-y-8 pb-32">
-        <!-- Added pb-32 for input area spacing -->
-
-        {#each chatState.messages as message}
+        {#each chatState.messages as message, i}
             <div
                 class="flex flex-col gap-4 {message.role === 'user'
                     ? 'items-end'
@@ -44,47 +52,70 @@
                     </div>
 
                     <!-- Message Content -->
-                    <div class="flex flex-col gap-2">
+                    <div class="flex flex-col gap-2 w-full min-w-0">
                         <div
                             class="text-sm font-semibold text-foreground/80 px-1"
                         >
                             {message.role === "assistant" ? "BigLot.ai" : "You"}
                         </div>
 
-                        <div
-                            class="text-base text-foreground leading-relaxed whitespace-pre-wrap"
-                        >
-                            {message.content}
+                        <div class="text-base text-foreground leading-relaxed">
+                            {#if message.role === "assistant"}
+                                <Markdown content={message.content} />
+                            {:else}
+                                <div class="whitespace-pre-wrap">
+                                    {message.content}
+                                </div>
+                            {/if}
                         </div>
 
-                        <!-- Actions (Assistant Only) -->
-                        {#if message.role === "assistant" && message.content}
-                            <div class="flex items-center gap-2 mt-1">
+                        <!-- Actions -->
+                        {#if message.content}
+                            <div
+                                class="flex items-center gap-2 mt-1 {message.role ===
+                                'user'
+                                    ? 'justify-end'
+                                    : ''}"
+                            >
                                 <button
+                                    onclick={() =>
+                                        copyToClipboard(message.content, i)}
                                     class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
                                     title="Copy"
                                 >
-                                    <Copy size={14} />
+                                    {#if copiedIndex === i}
+                                        <Check
+                                            size={14}
+                                            class="text-green-500"
+                                        />
+                                    {:else}
+                                        <Copy size={14} />
+                                    {/if}
                                 </button>
-                                <button
-                                    class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
-                                    title="Regenerate"
-                                >
-                                    <RefreshCcw size={14} />
-                                </button>
-                                <div class="h-3 w-px bg-white/10 mx-1"></div>
-                                <button
-                                    class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
-                                    title="Good response"
-                                >
-                                    <ThumbsUp size={14} />
-                                </button>
-                                <button
-                                    class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
-                                    title="Bad response"
-                                >
-                                    <ThumbsDown size={14} />
-                                </button>
+
+                                {#if message.role === "assistant"}
+                                    <button
+                                        class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
+                                        title="Regenerate"
+                                    >
+                                        <RefreshCcw size={14} />
+                                    </button>
+                                    <div
+                                        class="h-3 w-px bg-white/10 mx-1"
+                                    ></div>
+                                    <button
+                                        class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
+                                        title="Good response"
+                                    >
+                                        <ThumbsUp size={14} />
+                                    </button>
+                                    <button
+                                        class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
+                                        title="Bad response"
+                                    >
+                                        <ThumbsDown size={14} />
+                                    </button>
+                                {/if}
                             </div>
                         {/if}
                     </div>

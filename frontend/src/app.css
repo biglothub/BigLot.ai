@@ -76,3 +76,76 @@ body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
 }
+
+/* Markdown Styles (Gold Prose) */
+.prose-gold {
+    @apply text-foreground text-base leading-7;
+}
+
+.prose-gold h1 {
+    @apply text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-white mb-6 mt-8;
+}
+
+.prose-gold h2 {
+    @apply text-2xl font-bold text-primary/90 mb-4 mt-8 border-b border-white/10 pb-2;
+}
+
+.prose-gold h3 {
+    @apply text-xl font-semibold text-primary/80 mb-3 mt-6;
+}
+
+.prose-gold p {
+    @apply mb-4;
+}
+
+.prose-gold ul {
+    @apply list-disc list-outside ml-6 mb-4 marker:text-primary;
+}
+
+.prose-gold ol {
+    @apply list-decimal list-outside ml-6 mb-4 marker:text-primary;
+}
+
+.prose-gold li {
+    @apply mb-1 pl-1;
+}
+
+.prose-gold strong {
+    @apply font-bold text-primary/90;
+}
+
+.prose-gold a {
+    @apply text-primary hover:text-white underline decoration-primary/30 hover:decoration-white transition-colors;
+}
+
+.prose-gold code {
+    @apply bg-secondary px-1.5 py-0.5 rounded text-sm font-mono text-primary/80 border border-white/5;
+}
+
+.prose-gold pre {
+    @apply bg-[#0a0a0a] p-4 rounded-xl border border-white/10 overflow-x-auto mb-6 mt-2 shadow-lg;
+}
+
+.prose-gold pre code {
+    @apply bg-transparent p-0 border-0 text-gray-300 block;
+}
+
+.prose-gold blockquote {
+    @apply border-l-4 border-primary/50 pl-4 py-1 my-4 italic text-muted-foreground bg-white/5 rounded-r-lg;
+}
+
+.prose-gold table {
+    @apply w-full border-collapse mb-6 mt-2 text-sm;
+}
+
+.prose-gold th {
+    @apply text-left py-2 px-3 border-b border-primary/30 font-semibold text-primary;
+}
+
+.prose-gold td {
+    @apply py-2 px-3 border-b border-white/5;
+}
+
+.prose-gold hr {
+    @apply border-white/10 my-8;
+}
