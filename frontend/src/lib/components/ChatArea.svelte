@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import {
         Bot,
         User,
@@ -13,6 +14,10 @@
 
     let copiedIndex = $state<number | null>(null);
 
+    let scroller: HTMLDivElement | null = $state(null);
+    let stickToBottom = $state(true);
+    const BOTTOM_THRESHOLD_PX = 96;
+
     function copyToClipboard(text: string, index: number) {
         navigator.clipboard.writeText(text);
         copiedIndex = index;
@@ -20,9 +25,35 @@
             if (copiedIndex === index) copiedIndex = null;
         }, 2000);
     }
+
+    function updateStickToBottom() {
+        if (!scroller) return;
+        const distanceFromBottom =
+            scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+        stickToBottom = distanceFromBottom < BOTTOM_THRESHOLD_PX;
+    }
+
+    async function maybeAutoScroll() {
+        if (!scroller) return;
+        if (!stickToBottom) return;
+        // Wait for DOM to paint the new/updated message before scrolling.
+        await tick();
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+    }
+
+    $effect(() => {
+        // Track both message count and the last message content so streaming updates
+        // keep the view pinned only when the user hasn't scrolled away.
+        const n = chatState.messages.length;
+        const last = n > 0 ? chatState.messages[n - 1]?.content ?? "" : "";
+        void last;
+        void maybeAutoScroll();
+    });
 </script>
 
 <div
+    bind:this={scroller}
+    onscroll={updateStickToBottom}
     class="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
 >
     <div class="max-w-3xl mx-auto space-y-8 pb-32">
@@ -60,7 +91,10 @@
                         </div>
 
                         <div
-                            class="text-base text-foreground leading-relaxed flex flex-col gap-3"
+                            class="text-base text-foreground leading-relaxed flex flex-col gap-3 {message.role ===
+                            'user'
+                                ? 'w-fit max-w-full rounded-2xl rounded-br-md px-4 py-3 bg-primary/10 border border-primary/20 shadow-lg shadow-primary/5'
+                                : ''}"
                         >
                             {#if message.image_url}
                                 <div
@@ -70,6 +104,9 @@
                                         src={message.image_url}
                                         alt="Attached preview"
                                         class="w-full h-auto max-h-[400px] object-cover"
+                                        onload={() => {
+                                            void maybeAutoScroll();
+                                        }}
                                     />
                                 </div>
                             {/if}
@@ -77,7 +114,7 @@
                             {#if message.role === "assistant"}
                                 <Markdown content={message.content} />
                             {:else}
-                                <div class="whitespace-pre-wrap">
+                                <div class="whitespace-pre-wrap break-words">
                                     {message.content}
                                 </div>
                             {/if}
