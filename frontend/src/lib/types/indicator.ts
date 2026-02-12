@@ -37,99 +37,14 @@ export type CustomIndicator = {
     updated_at?: string;
 };
 
-// ─── Manus API Types ───
+// ─── GPT Model Types ───
 
-export type ManusTaskMode = 'chat' | 'adaptive' | 'agent';
-export type ManusAgentProfile = 'manus-1.6' | 'manus-1.6-lite' | 'manus-1.6-max';
-export type ManusTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type GPTModelOption = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini';
 
-export type ManusCreateTaskRequest = {
-    prompt: string;
-    agentProfile?: ManusAgentProfile;
-    task_mode?: ManusTaskMode;
-    attachments?: ManusAttachment[];
-    project_id?: string;
-    task_id?: string; // for multi-turn
-    hide_in_task_list?: boolean;
-    locale?: string;
-};
+// ─── Legacy Manus Types (kept for DB compatibility) ───
+// The manus_task_id field in CustomIndicator is now used as a generation ID
 
-export type ManusAttachment = {
-    type: 'file_id' | 'url' | 'base64';
-    file_id?: string;
-    url?: string;
-    data?: string;
-    mime_type?: string;
-    file_name?: string;
-};
-
-export type ManusCreateTaskResponse = {
-    task_id: string;
-    task_title: string;
-    task_url: string;
-    share_url?: string;
-};
-
-export type ManusTaskOutputContent = {
-    type: 'output_text' | 'output_file';
-    text?: string;
-    fileUrl?: string;
-    fileName?: string;
-    mimeType?: string;
-};
-
-export type ManusTaskOutputMessage = {
-    id: string;
-    status: string;
-    role: 'user' | 'assistant';
-    type: string;
-    content: ManusTaskOutputContent[];
-};
-
-export type ManusTask = {
-    id: string;
-    object: string;
-    created_at: number;
-    updated_at: number;
-    status: ManusTaskStatus;
-    error?: string;
-    instructions?: string;
-    model?: string;
-    metadata?: {
-        task_title?: string;
-        task_url?: string;
-    };
-    output?: ManusTaskOutputMessage[];
-    credit_usage?: number;
-};
-
-export type ManusGetTasksResponse = {
-    object: string;
-    data: ManusTask[];
-    first_id: string;
-    last_id: string;
-    has_more: boolean;
-};
-
-// ─── Webhook Types ───
-
-export type ManusWebhookEvent = {
-    event_id: string;
-    event_type: 'task_created' | 'task_progress' | 'task_stopped';
-    task_detail?: {
-        task_id: string;
-        task_title?: string;
-        task_url?: string;
-        message?: string;
-        attachments?: { file_name: string; url: string; size_bytes: number }[];
-        stop_reason?: 'finish' | 'ask';
-    };
-    progress_detail?: {
-        task_id: string;
-        progress_type: string;
-        message: string;
-    };
-};
+export type ManusAgentProfile = GPTModelOption; // Alias for backward compatibility
 
 // ─── Indicator Builder State Types ───
 
@@ -150,8 +65,6 @@ export type IndicatorActivityLog = {
 
 export type IndicatorGenerationProgress = {
     status: IndicatorGenerationStatus;
-    taskId?: string;
-    taskUrl?: string;
     currentStep?: string;
     error?: string;
     generatedCode?: string;

@@ -30,7 +30,7 @@
     import type {
         IndicatorActivityLog,
         IndicatorValue,
-        ManusAgentProfile,
+        GPTModelOption,
         OHLCV,
     } from "$lib/types/indicator";
 
@@ -57,27 +57,27 @@
     let previewTab = $state<"chart" | "data">("chart");
 
     const profiles: {
-        value: ManusAgentProfile;
+        value: GPTModelOption;
         label: string;
         desc: string;
         icon: string;
     }[] = [
         {
-            value: "manus-1.6-lite",
+            value: "gpt-4o-mini",
             label: "Quick",
-            desc: "Simple indicators",
+            desc: "Fast & simple",
             icon: "⚡",
         },
         {
-            value: "manus-1.6",
+            value: "gpt-4o",
             label: "Standard",
-            desc: "Complex indicators",
+            desc: "Best quality",
             icon: "🔄",
         },
         {
-            value: "manus-1.6-max",
-            label: "Pro",
-            desc: "Advanced systems",
+            value: "o3-mini",
+            label: "Reasoning",
+            desc: "Complex logic",
             icon: "🧠",
         },
     ];
@@ -584,7 +584,7 @@ function calculate(data, params) {
                 prompt,
                 code,
                 loadedModule.indicatorConfig,
-                progress.taskId || "",
+                `gpt-${Date.now()}`,
             );
             saveSuccess = true;
             showSaved = true; // Auto expand My Indicators
@@ -734,15 +734,15 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
             </p>
         </div>
 
-        <!-- Agent Profile Selector -->
+        <!-- AI Model Selector -->
         <div
             class="flex items-center gap-1 bg-secondary/60 rounded-xl p-1 border border-white/5"
         >
             {#each profiles as p}
                 <button
-                    onclick={() => (indicatorBuilder.selectedProfile = p.value)}
+                    onclick={() => (indicatorBuilder.selectedModel = p.value)}
                     class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
-                        {indicatorBuilder.selectedProfile === p.value
+                        {indicatorBuilder.selectedModel === p.value
                         ? 'bg-primary/20 text-primary border border-primary/30'
                         : 'text-muted-foreground hover:text-foreground hover:bg-white/5'}"
                     title={p.desc}
@@ -856,7 +856,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                 {/if}
 
                 <!-- BigLot AI Agent Activity -->
-                {#if progress.taskUrl}
+                {#if isGenerating || isReady || progress.status === 'error'}
                     <div class="mt-4">
                         <div class="flex items-center justify-between mb-2">
                             <button
@@ -923,12 +923,9 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                             {:else}
                                                 <span>● Idle</span>
                                             {/if}
-                                            {#if progress.taskId}
+                                            {#if indicatorBuilder.selectedModel}
                                                 <span class="ml-2 opacity-50"
-                                                    >ID: {progress.taskId.slice(
-                                                        0,
-                                                        8,
-                                                    )}...</span
+                                                    >Model: {indicatorBuilder.selectedModel}</span
                                                 >
                                             {/if}
                                         </div>
@@ -1365,7 +1362,6 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                             status: "ready",
                                             generatedCode: indicator.code,
                                             generatedConfig: indicator.config,
-                                            taskId: indicator.manus_task_id,
                                         };
                                         showCode = true;
                                         tryLoadAndTest();

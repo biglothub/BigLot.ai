@@ -1,31 +1,21 @@
 /**
- * Manus AI API Client for BigLot.ai Indicator Builder
+ * OpenAI GPT Client for BigLot.ai Indicator Builder
  * Server-side only — uses private env variables
+ * 
+ * Uses OpenAI GPT for synchronous indicator generation (no polling needed).
  */
 import { env } from '$env/dynamic/private';
-import type {
-    ManusCreateTaskRequest,
-    ManusCreateTaskResponse,
-    ManusTask,
-    ManusAgentProfile
-} from '$lib/types/indicator';
 import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt } from '$lib/pinescriptLibrary';
+import OpenAI from 'openai';
 
-const MANUS_BASE_URL = 'https://api.manus.ai/v1';
-
-function getApiKey(): string {
-    const key = env.MANUS_API_KEY;
-    if (!key) throw new Error('MANUS_API_KEY is not configured');
-    return key;
+function getOpenAI(): OpenAI {
+    const key = env.OPENAI_API_KEY;
+    if (!key) throw new Error('OPENAI_API_KEY is not configured in .env');
+    return new OpenAI({ apiKey: key });
 }
 
-function headers(): Record<string, string> {
-    return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'API_KEY': getApiKey()
-    };
-}
+// ─── GPT Model Options ───
+export type GPTModel = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini';
 
 // ─── DUAL-MODE SYSTEM PROMPT ───
 const INDICATOR_SYSTEM_INSTRUCTION = `You are the World-Class Trading Indicator Engineer for BigLot.ai, specializing in high-performance, error-free TradingView PineScript v6.
@@ -94,176 +84,101 @@ COMMON PINESCRIPT ERRORS YOU MUST AVOID:
   FIX: Avoid using request.security() with lookahead=barmerge.lookahead_on unless intentional. Use barstate.isconfirmed for signal confirmation.
 `;
 
-// ─── PROJECT MANAGEMENT ───
+// ─── INDICATOR GENERATION ───
 
-export async function createIndicatorProject(): Promise<string> {
-    const res = await fetch(`${MANUS_BASE_URL}/projects`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-            name: 'BigLot.ai Indicator Builder',
-            instruction: INDICATOR_SYSTEM_INSTRUCTION
-        })
-    });
-
-    if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Failed to create project: ${error}`);
-    }
-
-    const data = await res.json();
-    return data.id;
-}
-
-// ─── TASK MANAGEMENT ───
+export type GenerateIndicatorResult = {
+    code: string | null;
+    previewCode: string | null;
+    textOutput: string;
+    referenceUsed: string | null;
+    model: string;
+};
 
 /**
- * Generate an indicator from a user prompt
- * Uses reference library matching: finds the closest open-source indicator as a base
+ * Generate an indicator from a user prompt using OpenAI GPT.
+ * Returns the result directly — no polling needed.
  */
 export async function generateIndicator(
     prompt: string,
     options?: {
-        agentProfile?: ManusAgentProfile;
-        projectId?: string;
-        existingTaskId?: string; // for multi-turn refinement
+        model?: GPTModel;
     }
-): Promise<ManusCreateTaskResponse & { referenceUsed?: string }> {
+): Promise<GenerateIndicatorResult> {
+    const openai = getOpenAI();
+    const model = options?.model ?? 'gpt-4o';
 
+    // ─── REFERENCE MATCHING ENGINE ───
     let finalPrompt: string;
-    let referenceUsed: string | undefined;
+    let referenceUsed: string | null = null;
 
-    if (options?.existingTaskId) {
-        // Follow-up refinement: just send the prompt as-is
-        finalPrompt = prompt;
+    const { match, score, allMatches } = findBestReference(prompt);
+
+    if (match && score >= 0.05) {
+        console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
+        if (allMatches.length > 1) {
+            console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
+        }
+        finalPrompt = buildReferenceEnhancedPrompt(prompt, match);
+        referenceUsed = `${match.name} by ${match.author}`;
     } else {
-        // ─── REFERENCE MATCHING ENGINE ───
-        // Search curated library of battle-tested LuxAlgo & TradingView indicators
-        const { match, score, allMatches } = findBestReference(prompt);
-
-        if (match && score >= 0.05) {
-            // Found a relevant reference! Use it as the base
-            console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
-            if (allMatches.length > 1) {
-                console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
-            }
-            finalPrompt = buildReferenceEnhancedPrompt(prompt, match);
-            referenceUsed = `${match.name} by ${match.author}`;
-        } else {
-            // No match in library — tell AI to search TradingView community for inspiration
-            console.log(`[BigLot.ai] No library match found for: "${prompt}" — using community search mode`);
-            finalPrompt = buildSearchPrompt(prompt);
-        }
+        console.log(`[BigLot.ai] No library match found for: "${prompt}" — using community search mode`);
+        finalPrompt = buildSearchPrompt(prompt);
     }
 
-    const body: ManusCreateTaskRequest = {
-        prompt: finalPrompt,
-        agentProfile: options?.agentProfile ?? 'manus-1.6',
-        task_mode: 'agent',
-        hide_in_task_list: true
+    // ─── CALL GPT ───
+    console.log(`[BigLot.ai] Generating indicator with ${model}...`);
+    const startTime = Date.now();
+
+    const completion = await openai.chat.completions.create({
+        model,
+        messages: [
+            { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
+            { role: 'user', content: finalPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 8192,
+    });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[BigLot.ai] GPT response received in ${elapsed}s (${model})`);
+
+    const textOutput = completion.choices[0]?.message?.content ?? '';
+
+    // ─── EXTRACT CODE BLOCKS ───
+    const { pineCode, jsCode } = extractCodeBlocks(textOutput);
+
+    return {
+        code: pineCode,
+        previewCode: jsCode,
+        textOutput,
+        referenceUsed,
+        model
     };
-
-    if (options?.projectId) {
-        body.project_id = options.projectId;
-    }
-
-    if (options?.existingTaskId) {
-        body.task_id = options.existingTaskId;
-    }
-
-    const res = await fetch(`${MANUS_BASE_URL}/tasks`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(body)
-    });
-
-    if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Failed to create indicator task: ${error}`);
-    }
-
-    const result = await res.json();
-    return { ...result, referenceUsed };
 }
 
 /**
- * Get a specific task by ID
+ * Extract PineScript and JavaScript code blocks from GPT response text
  */
-export async function getTask(taskId: string): Promise<ManusTask | null> {
-    // Try direct task endpoint first
-    const res = await fetch(`${MANUS_BASE_URL}/tasks?limit=100`, {
-        method: 'GET',
-        headers: headers()
-    });
+function extractCodeBlocks(text: string): { pineCode: string | null; jsCode: string | null } {
+    let pineCode: string | null = null;
+    let jsCode: string | null = null;
 
-    if (!res.ok) return null;
+    const blocks = [...text.matchAll(/```(\w+)?\s*\r?\n([\s\S]*?)```/g)];
 
-    try {
-        const data = await res.json();
-        const tasks = data?.data;
-        if (!Array.isArray(tasks)) return null;
-        return tasks.find((t: ManusTask) => t.id === taskId) ?? null;
-    } catch {
-        return null;
-    }
-}
+    for (const block of blocks) {
+        const lang = (block[1] ?? '').toLowerCase();
+        const blockText = block[2].trim();
+        if (!blockText) continue;
 
-/**
- * Extract generated indicator code from a completed task
- */
-export function extractIndicatorCode(task: ManusTask): {
-    code: string | null;      // PineScript
-    previewCode: string | null; // JavaScript for preview
-    pineFileUrl: string | null;
-    previewFileUrl: string | null;
-    textOutput: string;
-} {
-    let code: string | null = null;
-    let previewCode: string | null = null;
-    let pineFileUrl: string | null = null;
-    let previewFileUrl: string | null = null;
-    let textOutput = '';
-
-    if (!task.output) return { code, previewCode, pineFileUrl, previewFileUrl, textOutput };
-
-    for (const msg of task.output) {
-        if (msg.role !== 'assistant') continue;
-
-        for (const content of msg.content) {
-            if (content.type === 'output_text' && content.text) {
-                textOutput += content.text + '\n';
-
-                const blocks = [...content.text.matchAll(/```(\w+)?\s*\r?\n([\s\S]*?)```/g)];
-                for (const block of blocks) {
-                    const lang = (block[1] ?? '').toLowerCase();
-                    const blockText = block[2].trim();
-                    if (!blockText) continue;
-
-                    if (!code && (lang.includes('pine') || isLikelyPineCode(blockText))) {
-                        code = blockText;
-                    }
-                    if (!previewCode && (isJavaScriptBlock(lang) || isLikelyPreviewCode(blockText))) {
-                        previewCode = blockText;
-                    }
-                }
-            }
-
-            if (content.type === 'output_file') {
-                const fileName = content.fileName?.toLowerCase() ?? '';
-                const fileUrl = content.fileUrl ?? null;
-                if (!fileUrl) continue;
-
-                if (!pineFileUrl && fileName.endsWith('.pine')) {
-                    pineFileUrl = fileUrl;
-                }
-                if (!previewFileUrl && (fileName.endsWith('.js') || fileName.endsWith('.ts'))) {
-                    previewFileUrl = fileUrl;
-                }
-            }
+        if (!pineCode && (lang.includes('pine') || isLikelyPineCode(blockText))) {
+            pineCode = blockText;
+        }
+        if (!jsCode && (isJavaScriptBlock(lang) || isLikelyPreviewCode(blockText))) {
+            jsCode = blockText;
         }
     }
 
-    return { code, previewCode, pineFileUrl, previewFileUrl, textOutput };
+    return { pineCode, jsCode };
 }
 
 function isJavaScriptBlock(lang: string): boolean {
@@ -281,13 +196,4 @@ function isLikelyPreviewCode(code: string): boolean {
     return /function\s+calculate\s*\(/.test(code)
         || /const\s+calculate\s*=/.test(code)
         || /module\.exports\s*=/.test(code);
-}
-
-/**
- * Download a file from Manus file URL
- */
-export async function downloadFile(fileUrl: string): Promise<string> {
-    const res = await fetch(fileUrl);
-    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
-    return res.text();
 }

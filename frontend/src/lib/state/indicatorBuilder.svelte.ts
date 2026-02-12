@@ -1,14 +1,13 @@
 /**
  * Indicator Builder State Management
- * Manages the lifecycle of indicator generation via Manus AI
+ * Manages the lifecycle of indicator generation via OpenAI GPT
  */
 import type {
-    IndicatorGenerationStatus,
     IndicatorGenerationProgress,
     IndicatorActivityLog,
     CustomIndicator,
     IndicatorConfig,
-    ManusAgentProfile
+    GPTModelOption
 } from '$lib/types/indicator';
 import { supabase } from '$lib/supabase';
 
@@ -22,37 +21,44 @@ class IndicatorBuilderState {
 
     // UI state
     isBuilderOpen = $state(false);
-    selectedProfile = $state<ManusAgentProfile>('manus-1.6');
+    selectedModel = $state<GPTModelOption>('gpt-4o');
 
     // Reference tracking
     referenceUsed = $state<string | null>(null);
 
-    // Polling interval
-    private pollInterval: ReturnType<typeof setInterval> | null = null;
-
     /**
      * Generate a new indicator from a prompt
+     * Uses OpenAI GPT — synchronous, no polling needed
      */
-    async generateFromPrompt(prompt: string, existingTaskId?: string) {
+    async generateFromPrompt(prompt: string) {
         this.progress = {
             status: 'submitting',
-            activityLog: [this.createSystemLog('Submitting task to BigLot AI...')]
+            activityLog: [this.createSystemLog('🚀 Submitting to BigLot AI (GPT)...')]
         };
 
         try {
+            // Update status to generating
+            this.progress = {
+                status: 'generating',
+                currentStep: 'GPT is writing your indicator...',
+                activityLog: [
+                    ...(this.progress.activityLog ?? []),
+                    this.createSystemLog(`⚙️ Using model: ${this.selectedModel}`)
+                ]
+            };
+
             const res = await fetch('/api/manus', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt,
-                    agentProfile: this.selectedProfile,
-                    existingTaskId
+                    model: this.selectedModel
                 })
             });
 
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Failed to submit');
+                throw new Error(err.error || 'Failed to generate');
             }
 
             const data = await res.json();
@@ -61,23 +67,35 @@ class IndicatorBuilderState {
             this.referenceUsed = data.referenceUsed ?? null;
 
             const refLog = this.referenceUsed
-                ? this.createSystemLog(`📚 Using reference base: ${this.referenceUsed}`)
-                : this.createSystemLog('🔍 No library match — AI searching TradingView community for best approach');
+                ? this.createSystemLog(`📚 Reference base: ${this.referenceUsed}`)
+                : this.createSystemLog('🔍 AI generated from community knowledge');
 
-            this.progress = {
-                status: 'generating',
-                taskId: data.taskId,
-                taskUrl: data.taskUrl,
-                currentStep: 'BigLot AI is writing your indicator...',
-                activityLog: [
-                    ...(this.progress.activityLog ?? []),
-                    this.createSystemLog('Task accepted by AI agent'),
-                    refLog
-                ]
-            };
-
-            // Start polling for completion
-            this.startPolling(data.taskId);
+            if (data.code) {
+                this.progress = {
+                    status: 'ready',
+                    generatedCode: data.code,
+                    generatedPreviewCode: data.previewCode,
+                    generatedConfig: data.config,
+                    currentStep: 'Indicator ready!',
+                    activityLog: [
+                        ...(this.progress.activityLog ?? []),
+                        refLog,
+                        this.createSystemLog(`✅ Indicator generated successfully (${data.model})`)
+                    ]
+                };
+            } else {
+                // Code couldn't be parsed — show raw output
+                this.progress = {
+                    status: 'ready',
+                    generatedCode: data.textOutput || '// No code generated',
+                    currentStep: 'Check the generated code below',
+                    activityLog: [
+                        ...(this.progress.activityLog ?? []),
+                        refLog,
+                        this.createSystemLog('⚠️ Completed but code block not detected — showing raw output')
+                    ]
+                };
+            }
 
         } catch (err: any) {
             this.progress = {
@@ -85,95 +103,9 @@ class IndicatorBuilderState {
                 error: err.message || 'Something went wrong',
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(err.message || 'Something went wrong')
+                    this.createSystemLog(`❌ ${err.message || 'Something went wrong'}`)
                 ]
             };
-        }
-    }
-
-    /**
-     * Poll Manus task status until completion
-     */
-    private startPolling(taskId: string) {
-        this.stopPolling();
-
-        this.pollInterval = setInterval(async () => {
-            try {
-                // Check webhook events for progress updates
-                const webhookRes = await fetch(`/api/manus/webhook?taskId=${taskId}`);
-                if (webhookRes.ok) {
-                    const webhookData = await webhookRes.json();
-                    if (webhookData.latestStep || webhookData.activityLog) {
-                        this.progress = {
-                            ...this.progress,
-                            currentStep: webhookData.latestStep ?? this.progress.currentStep,
-                            activityLog: webhookData.activityLog ?? this.progress.activityLog
-                        };
-                    }
-                }
-
-                // Check main task status
-                const res = await fetch(`/api/manus?taskId=${taskId}`);
-                if (!res.ok) return;
-
-                const data = await res.json();
-
-                if (data.status === 'completed') {
-                    this.stopPolling();
-
-                    if (data.code) {
-                        this.progress = {
-                            status: 'ready',
-                            taskId,
-                            generatedCode: data.code,
-                            generatedPreviewCode: data.previewCode,
-                            generatedConfig: data.config,
-                            currentStep: 'Indicator ready!',
-                            activityLog: [
-                                ...(this.progress.activityLog ?? []),
-                                this.createSystemLog('Indicator generated successfully')
-                            ]
-                        };
-                    } else {
-                        // Code was in text output but couldn't be parsed — show raw
-                        this.progress = {
-                            status: 'ready',
-                            taskId,
-                            generatedCode: data.textOutput || '// No code generated',
-                            currentStep: 'Check the generated code below',
-                            activityLog: [
-                                ...(this.progress.activityLog ?? []),
-                                this.createSystemLog('Task completed without parsable code')
-                            ]
-                        };
-                    }
-                    return;
-                }
-
-                if (data.status === 'failed') {
-                    this.stopPolling();
-                    this.progress = {
-                        status: 'error',
-                        taskId,
-                        error: data.error || 'Task failed',
-                        activityLog: [
-                            ...(this.progress.activityLog ?? []),
-                            this.createSystemLog(data.error || 'Task failed')
-                        ]
-                    };
-                    return;
-                }
-
-            } catch (err) {
-                console.error('Polling error:', err);
-            }
-        }, 5000); // Poll every 5 seconds
-    }
-
-    private stopPolling() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
         }
     }
 
@@ -189,13 +121,13 @@ class IndicatorBuilderState {
     /**
      * Save a generated indicator to Supabase
      */
-    async saveIndicator(name: string, description: string, code: string, config: IndicatorConfig, manusTaskId: string) {
+    async saveIndicator(name: string, description: string, code: string, config: IndicatorConfig, taskId: string) {
         const indicator: Partial<CustomIndicator> = {
             name,
             description,
             code,
             config,
-            manus_task_id: manusTaskId,
+            manus_task_id: taskId,
             version: 1,
             is_active: false
         };
@@ -218,9 +150,6 @@ class IndicatorBuilderState {
         return data;
     }
 
-    /**
-     * Load all saved indicators
-     */
     // DB State
     dbError: 'missing_table' | null = $state(null);
 
@@ -235,7 +164,6 @@ class IndicatorBuilderState {
 
         if (error) {
             console.error('Load Error:', error);
-            // Check for missing table error (Postgres code 42P01)
             if (error.code === '42P01' || error.message?.includes('does not exist')) {
                 this.dbError = 'missing_table';
             }
@@ -275,7 +203,6 @@ class IndicatorBuilderState {
      * Reset the builder state
      */
     reset() {
-        this.stopPolling();
         this.progress = { status: 'idle' };
         this.referenceUsed = null;
     }
