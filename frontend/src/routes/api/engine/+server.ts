@@ -1,12 +1,9 @@
 /**
- * POST /api/manus — Generate indicator via OpenAI GPT (synchronous)
- * 
- * Replaces the old Manus async task system.
- * Now returns the complete result in a single request.
+ * POST /api/engine — Generate indicator via BigLot.ai proprietary engine
  */
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { generateIndicator, type GPTModel } from '$lib/manus';
+import { generateIndicator, type GPTModel } from '$lib/aiEngine';
 
 export const POST: RequestHandler = async ({ request }) => {
     const { prompt, model } = await request.json();

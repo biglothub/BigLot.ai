@@ -47,7 +47,7 @@ class IndicatorBuilderState {
                 ]
             };
 
-            const res = await fetch('/api/manus', {
+            const res = await fetch('/api/engine', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -126,7 +126,7 @@ class IndicatorBuilderState {
             description,
             code,
             config,
-            manus_task_id: taskId,
+            generation_id: taskId,
             version: 1,
             is_active: false
         };

@@ -1,17 +1,17 @@
 /**
- * OpenAI GPT Client for BigLot.ai Indicator Builder
+ * BigLot.ai Proprietary Indicator Engine
  * Server-side only — uses private env variables
  * 
- * Uses OpenAI GPT for synchronous indicator generation (no polling needed).
+ * Uses advanced AI logic for synchronous indicator generation.
  */
 import { env } from '$env/dynamic/private';
 import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt } from '$lib/pinescriptLibrary';
 import OpenAI from 'openai';
 
 function getOpenAI(): OpenAI {
-    const key = env.OPENAI_API_KEY;
-    if (!key) throw new Error('OPENAI_API_KEY is not configured in .env');
-    return new OpenAI({ apiKey: key });
+  const key = env.OPENAI_API_KEY;
+  if (!key) throw new Error('OPENAI_API_KEY is not configured in .env');
+  return new OpenAI({ apiKey: key });
 }
 
 // ─── GPT Model Options ───
@@ -87,11 +87,11 @@ COMMON PINESCRIPT ERRORS YOU MUST AVOID:
 // ─── INDICATOR GENERATION ───
 
 export type GenerateIndicatorResult = {
-    code: string | null;
-    previewCode: string | null;
-    textOutput: string;
-    referenceUsed: string | null;
-    model: string;
+  code: string | null;
+  previewCode: string | null;
+  textOutput: string;
+  referenceUsed: string | null;
+  model: string;
 };
 
 /**
@@ -99,101 +99,101 @@ export type GenerateIndicatorResult = {
  * Returns the result directly — no polling needed.
  */
 export async function generateIndicator(
-    prompt: string,
-    options?: {
-        model?: GPTModel;
-    }
+  prompt: string,
+  options?: {
+    model?: GPTModel;
+  }
 ): Promise<GenerateIndicatorResult> {
-    const openai = getOpenAI();
-    const model = options?.model ?? 'gpt-4o';
+  const openai = getOpenAI();
+  const model = options?.model ?? 'gpt-4o';
 
-    // ─── REFERENCE MATCHING ENGINE ───
-    let finalPrompt: string;
-    let referenceUsed: string | null = null;
+  // ─── REFERENCE MATCHING ENGINE ───
+  let finalPrompt: string;
+  let referenceUsed: string | null = null;
 
-    const { match, score, allMatches } = findBestReference(prompt);
+  const { match, score, allMatches } = findBestReference(prompt);
 
-    if (match && score >= 0.05) {
-        console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
-        if (allMatches.length > 1) {
-            console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
-        }
-        finalPrompt = buildReferenceEnhancedPrompt(prompt, match);
-        referenceUsed = `${match.name} by ${match.author}`;
-    } else {
-        console.log(`[BigLot.ai] No library match found for: "${prompt}" — using community search mode`);
-        finalPrompt = buildSearchPrompt(prompt);
+  if (match && score >= 0.05) {
+    console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
+    if (allMatches.length > 1) {
+      console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
     }
+    finalPrompt = buildReferenceEnhancedPrompt(prompt, match);
+    referenceUsed = `${match.name} by ${match.author}`;
+  } else {
+    console.log(`[BigLot.ai] No library match found for: "${prompt}" — using community search mode`);
+    finalPrompt = buildSearchPrompt(prompt);
+  }
 
-    // ─── CALL GPT ───
-    console.log(`[BigLot.ai] Generating indicator with ${model}...`);
-    const startTime = Date.now();
+  // ─── CALL GPT ───
+  console.log(`[BigLot.ai] Generating indicator with ${model}...`);
+  const startTime = Date.now();
 
-    const completion = await openai.chat.completions.create({
-        model,
-        messages: [
-            { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
-            { role: 'user', content: finalPrompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 8192,
-    });
+  const completion = await openai.chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
+      { role: 'user', content: finalPrompt }
+    ],
+    temperature: 0.3,
+    max_tokens: 8192,
+  });
 
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[BigLot.ai] GPT response received in ${elapsed}s (${model})`);
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`[BigLot.ai] GPT response received in ${elapsed}s (${model})`);
 
-    const textOutput = completion.choices[0]?.message?.content ?? '';
+  const textOutput = completion.choices[0]?.message?.content ?? '';
 
-    // ─── EXTRACT CODE BLOCKS ───
-    const { pineCode, jsCode } = extractCodeBlocks(textOutput);
+  // ─── EXTRACT CODE BLOCKS ───
+  const { pineCode, jsCode } = extractCodeBlocks(textOutput);
 
-    return {
-        code: pineCode,
-        previewCode: jsCode,
-        textOutput,
-        referenceUsed,
-        model
-    };
+  return {
+    code: pineCode,
+    previewCode: jsCode,
+    textOutput,
+    referenceUsed,
+    model
+  };
 }
 
 /**
  * Extract PineScript and JavaScript code blocks from GPT response text
  */
 function extractCodeBlocks(text: string): { pineCode: string | null; jsCode: string | null } {
-    let pineCode: string | null = null;
-    let jsCode: string | null = null;
+  let pineCode: string | null = null;
+  let jsCode: string | null = null;
 
-    const blocks = [...text.matchAll(/```(\w+)?\s*\r?\n([\s\S]*?)```/g)];
+  const blocks = [...text.matchAll(/```(\w+)?\s*\r?\n([\s\S]*?)```/g)];
 
-    for (const block of blocks) {
-        const lang = (block[1] ?? '').toLowerCase();
-        const blockText = block[2].trim();
-        if (!blockText) continue;
+  for (const block of blocks) {
+    const lang = (block[1] ?? '').toLowerCase();
+    const blockText = block[2].trim();
+    if (!blockText) continue;
 
-        if (!pineCode && (lang.includes('pine') || isLikelyPineCode(blockText))) {
-            pineCode = blockText;
-        }
-        if (!jsCode && (isJavaScriptBlock(lang) || isLikelyPreviewCode(blockText))) {
-            jsCode = blockText;
-        }
+    if (!pineCode && (lang.includes('pine') || isLikelyPineCode(blockText))) {
+      pineCode = blockText;
     }
+    if (!jsCode && (isJavaScriptBlock(lang) || isLikelyPreviewCode(blockText))) {
+      jsCode = blockText;
+    }
+  }
 
-    return { pineCode, jsCode };
+  return { pineCode, jsCode };
 }
 
 function isJavaScriptBlock(lang: string): boolean {
-    return lang === 'javascript' || lang === 'js' || lang === 'typescript' || lang === 'ts';
+  return lang === 'javascript' || lang === 'js' || lang === 'typescript' || lang === 'ts';
 }
 
 function isLikelyPineCode(code: string): boolean {
-    return /@version\s*=\s*[56]/.test(code)
-        || /\bindicator\s*\(/.test(code)
-        || /\bstrategy\s*\(/.test(code)
-        || /\bta\./.test(code);
+  return /@version\s*=\s*[56]/.test(code)
+    || /\bindicator\s*\(/.test(code)
+    || /\bstrategy\s*\(/.test(code)
+    || /\bta\./.test(code);
 }
 
 function isLikelyPreviewCode(code: string): boolean {
-    return /function\s+calculate\s*\(/.test(code)
-        || /const\s+calculate\s*=/.test(code)
-        || /module\.exports\s*=/.test(code);
+  return /function\s+calculate\s*\(/.test(code)
+    || /const\s+calculate\s*=/.test(code)
+    || /module\.exports\s*=/.test(code);
 }

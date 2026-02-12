@@ -30,7 +30,7 @@ export type CustomIndicator = {
     description: string;
     code: string;
     config: IndicatorConfig;
-    manus_task_id: string;
+    generation_id: string; // Internal tracking ID
     version: number;
     is_active: boolean;
     created_at: string;
@@ -41,10 +41,9 @@ export type CustomIndicator = {
 
 export type GPTModelOption = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini';
 
-// ─── Legacy Manus Types (kept for DB compatibility) ───
-// The manus_task_id field in CustomIndicator is now used as a generation ID
+// ─── AI Engine Types ───
 
-export type ManusAgentProfile = GPTModelOption; // Alias for backward compatibility
+export type AIEngineProfile = GPTModelOption;
 
 // ─── Indicator Builder State Types ───
 
