@@ -1,5 +1,7 @@
 import { supabase } from '$lib/supabase';
 
+export type AgentMode = 'coach' | 'analyst' | 'pinescript';
+
 export type Message = {
     role: 'user' | 'assistant' | 'system';
     content: string;
@@ -18,6 +20,24 @@ class ChatState {
     currentChatId = $state<string | null>(null);
     isLoading = $state(false);
     selectedImage = $state<string | null>(null);
+    agentMode = $state<AgentMode>('coach');
+
+    private static readonly AGENT_MODE_STORAGE_KEY = 'biglot.agentMode';
+
+    constructor() {
+        // Best-effort persistence (no auth yet). Safe-guard for SSR.
+        if (typeof localStorage === 'undefined') return;
+        const saved = localStorage.getItem(ChatState.AGENT_MODE_STORAGE_KEY);
+        if (saved === 'coach' || saved === 'analyst' || saved === 'pinescript') {
+            this.agentMode = saved;
+        }
+    }
+
+    setAgentMode(mode: AgentMode) {
+        this.agentMode = mode;
+        if (typeof localStorage === 'undefined') return;
+        localStorage.setItem(ChatState.AGENT_MODE_STORAGE_KEY, mode);
+    }
 
     // Load list of chats for sidebar
     async loadAllChats() {
@@ -107,7 +127,7 @@ class ChatState {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: this.messages })
+                body: JSON.stringify({ messages: this.messages, mode: this.agentMode })
             });
 
             if (!response.ok) throw new Error('Failed to fetch');

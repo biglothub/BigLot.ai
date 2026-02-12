@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import OpenAI from 'openai';
 import { env } from '$env/dynamic/private';
+import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
 
 type IncomingMessage = {
     role: 'user' | 'assistant' | 'system';
@@ -46,26 +47,14 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
+    const mode = normalizeAgentMode(payload?.mode);
+    const systemPrompt = getSystemPrompt(mode);
+
     // Create formatted messages for OpenAI
     const formattedMessages = [
         { 
             role: "system", 
-            content: `You are BigLot.ai, an elite AI assistant for traders and a world-class Pine Script v6 expert.
-
-PINESCRIPT RULES (MUST FOLLOW):
-- Always use //@version=6 as the FIRST line.
-- Use namespaced functions: ta.sma(), ta.ema(), ta.rsi(), ta.atr(), ta.crossover(), math.abs(), math.max(), input.int(), input.float(), input.source(), input.color(), input.bool().
-- ALL plot(), plotshape(), plotchar(), hline(), fill(), bgcolor(), plotcandle(), plotbar() MUST be at GLOBAL scope. NEVER inside if/for/while/function blocks.
-- ALL input() calls MUST be at GLOBAL scope.
-- Use 'var' for variables that persist across bars and ':=' for reassignment.
-- Handle na values with nz() or na() checks.
-- Use color.new() for transparency, e.g., color.new(color.red, 30).
-- For conditional plots, calculate the value conditionally but plot at global scope: plot(condition ? value : na).
-- Never mix indicator() and strategy() in the same script.
-
-When users ask for indicators, provide complete, copy-paste ready PineScript v6 code that will compile without errors on TradingView.
-Provide accurate market analysis, risk management advice, and professional trading strategies.
-Your tone is professional, concise, and objective. Use markdown effectively.`
+            content: systemPrompt
         },
         ...safeMessages.map((m) => {
             // Only allow images from the user; ignore images on assistant messages.

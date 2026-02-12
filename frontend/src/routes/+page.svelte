@@ -2,7 +2,7 @@
     import Sidebar from "$lib/components/Sidebar.svelte";
     import ChatArea from "$lib/components/ChatArea.svelte";
     import InputArea from "$lib/components/InputArea.svelte";
-    import { chatState } from "$lib/state/chat.svelte";
+    import { chatState, type AgentMode } from "$lib/state/chat.svelte";
     import AgentOrb from "$lib/components/AgentOrb.svelte";
     import { fade } from "svelte/transition";
 
@@ -21,16 +21,38 @@
         class:ml-64={sidebarOpen}
         class:ml-0={!sidebarOpen}
     >
-        <!-- Top Bar (Persistent Agent Status) -->
-        <div class="absolute top-4 right-4 z-50 pointer-events-none">
-            {#if chatState.messages.length > 0}
+        <!-- Top Bar (Mode Selector like ChatGPT model picker) -->
+        <header
+            class="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-background/60 backdrop-blur-md"
+        >
+            <div class="flex items-center gap-2 min-w-0">
+                <div class="text-xs text-muted-foreground/70">
+                    Mode
+                </div>
+                <select
+                    class="text-xs bg-secondary/80 border border-white/10 rounded-full px-3 py-1.5 text-foreground/85 focus:outline-none focus:ring-0 focus:border-white/20 max-w-[16rem]"
+                    value={chatState.agentMode}
+                    onchange={(e) =>
+                        chatState.setAgentMode(
+                            (e.target as HTMLSelectElement)
+                                .value as AgentMode
+                        )}
+                    title="Assistant mode"
+                >
+                    <option value="coach">Coach (MM + Psych)</option>
+                    <option value="analyst">Market Analyst</option>
+                    <option value="pinescript">PineScript Engineer</option>
+                </select>
+            </div>
+
+            <div class="flex items-center gap-2">
                 <AgentOrb
                     size="sm"
                     status={chatState.isLoading ? "analyzing" : "idle"}
                     showLabel={false}
                 />
-            {/if}
-        </div>
+            </div>
+        </header>
 
         {#if chatState.messages.length === 0}
             <!-- Empty State / Home Page -->
