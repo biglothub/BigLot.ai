@@ -25,7 +25,7 @@
         <header
             class="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-background/60 backdrop-blur-md"
         >
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2 min-w-0 flex-wrap">
                 <div class="text-xs text-muted-foreground/70">
                     Mode
                 </div>
@@ -40,9 +40,11 @@
                     title="Assistant mode"
                 >
                     <option value="coach">Coach</option>
+                    <option value="recovery">Recovery</option>
                     <option value="analyst">Market Analyst</option>
                     <option value="pinescript">PineScript Engineer</option>
                 </select>
+
             </div>
 
             <div class="flex items-center gap-2">

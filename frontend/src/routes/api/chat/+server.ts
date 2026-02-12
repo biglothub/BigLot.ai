@@ -27,9 +27,6 @@ export const POST: RequestHandler = async ({ request }) => {
         return json({ error: '`messages` must be an array' }, { status: 400 });
     }
 
-    const mode = normalizeAgentMode(payload?.mode);
-    const systemPrompt = getSystemPrompt(mode);
-
     const MAX_MESSAGES = 50;
     const MAX_CHARS = 8000;
 
@@ -44,6 +41,9 @@ export const POST: RequestHandler = async ({ request }) => {
         .filter((m) => (m.content && m.content.trim().length > 0) || (m.role === 'user' && m.image_url))
         .slice(-MAX_MESSAGES);
 
+    const mode = normalizeAgentMode(payload?.mode);
+    const systemPrompt = getSystemPrompt(mode);
+
     // Debug-only helper to validate mode switching without calling OpenAI.
     // Set `BIGLOT_CHAT_ECHO_MODE=1` in server env to enable.
     if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
@@ -57,7 +57,10 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     if (!env.OPENAI_API_KEY) {
-        return json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500, headers: { 'X-BigLot-Mode': mode } });
+        return json(
+            { error: 'OPENAI_API_KEY is not configured' },
+            { status: 500, headers: { 'X-BigLot-Mode': mode } }
+        );
     }
 
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });

@@ -1,6 +1,6 @@
 import { supabase } from '$lib/supabase';
 
-export type AgentMode = 'coach' | 'analyst' | 'pinescript';
+export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript';
 
 export type Message = {
     role: 'user' | 'assistant' | 'system';
@@ -29,7 +29,7 @@ class ChatState {
         // Best-effort persistence (no auth yet). Safe-guard for SSR.
         if (typeof localStorage === 'undefined') return;
         const saved = localStorage.getItem(ChatState.AGENT_MODE_STORAGE_KEY);
-        if (saved === 'coach' || saved === 'analyst' || saved === 'pinescript') {
+        if (saved === 'coach' || saved === 'recovery' || saved === 'analyst' || saved === 'pinescript') {
             this.agentMode = saved;
         }
     }
