@@ -122,13 +122,18 @@ function normalizePineToV6(rawCode: string): string {
         .trim();
     if (!clean) return clean;
 
-    // Remove ALL existing @version directives (with or without spaces around =)
-    const body = clean.replace(/^\s*\/\/\s*@version\s*=?\s*\d+\s*$/gm, '').trimStart();
+    // Remove ALL existing @version directives
+    let body = clean.replace(/^\s*\/\/\s*@version\s*=?\s*\d+\s*$/gm, '').trimStart();
 
-    // Also handle the format //@version=6 (no space)
-    const bodyFinal = body.replace(/^\s*\/\/@version\s*=?\s*\d+\s*$/gm, '').trimStart();
+    // Remove credits, authors and external links to keep it proprietary
+    body = body
+        .replace(/^\s*\/\/\s*@author.*$/gm, '')
+        .replace(/^\s*\/\/\s*©.*$/gm, '')
+        .replace(/https?:\/\/(?:www\.)?(?:tradingview\.com|pinescriptpc\.com)[^\s]*/gi, '')
+        .replace(/^\s*\/\/\s*Source:.*$/gm, '')
+        .trim();
 
-    return `//@version=6\n${bodyFinal}`;
+    return `//@version=6\n${body}`;
 }
 
 function stripCodeFences(raw: string): string {

@@ -55,6 +55,66 @@
     let testError = $state<string | null>(null);
     let chartOhlcvData = $state<OHLCV[]>([]);
     let previewTab = $state<"chart" | "data">("chart");
+    let logContainer = $state<HTMLElement | null>(null);
+
+    // UX: Dripping logs for better perception
+    let displayedLogs = $state<IndicatorActivityLog[]>([]);
+    let showFinalSuccess = $state(false);
+
+    $effect(() => {
+        const rawLogs = indicatorBuilder.progress.activityLog || [];
+        const status = indicatorBuilder.progress.status;
+
+        // Detect new session / reset
+        if (rawLogs.length > 0 && displayedLogs.length > 0) {
+            if (rawLogs[0].id !== displayedLogs[0].id) {
+                displayedLogs = [];
+                showFinalSuccess = false;
+                return;
+            }
+        } else if (rawLogs.length === 0 && displayedLogs.length > 0) {
+            displayedLogs = [];
+            showFinalSuccess = false;
+            return;
+        }
+
+        if (rawLogs.length > displayedLogs.length) {
+            const nextIndex = displayedLogs.length;
+            const logToAdd = rawLogs[nextIndex];
+            // Slow down subsequent logs for better readability
+            const delay = nextIndex === 0 ? 0 : 800;
+
+            const timeout = setTimeout(() => {
+                displayedLogs = [...displayedLogs, logToAdd];
+            }, delay);
+
+            return () => clearTimeout(timeout);
+        }
+
+        if (
+            status === "ready" &&
+            rawLogs.length === displayedLogs.length &&
+            !showFinalSuccess
+        ) {
+            const timeout = setTimeout(() => {
+                showFinalSuccess = true;
+            }, 800);
+            return () => clearTimeout(timeout);
+        }
+    });
+
+    $effect(() => {
+        if (displayedLogs.length > 0 && logContainer) {
+            // Small delay to ensure DOM has updated
+            const timeout = setTimeout(() => {
+                logContainer?.scrollTo({
+                    top: logContainer.scrollHeight,
+                    behavior: "smooth",
+                });
+            }, 100);
+            return () => clearTimeout(timeout);
+        }
+    });
 
     const profiles: {
         value: GPTModelOption;
@@ -83,7 +143,6 @@
     ];
 
     const progress = $derived(indicatorBuilder.progress);
-    const activityLog = $derived(progress.activityLog || []);
     const isGenerating = $derived(
         progress.status === "generating" || progress.status === "submitting",
     );
@@ -730,27 +789,15 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                 Indicator Builder
             </h1>
             <p class="text-xs text-muted-foreground">
-                Prompt → AI generates → Ready to use
+                Prompt → BigLot.ai generates → Ready to use
             </p>
         </div>
 
-        <!-- AI Model Selector -->
+        <!-- Branding -->
         <div
-            class="flex items-center gap-1 bg-secondary/60 rounded-xl p-1 border border-white/5"
+            class="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-wider"
         >
-            {#each profiles as p}
-                <button
-                    onclick={() => (indicatorBuilder.selectedModel = p.value)}
-                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
-                        {indicatorBuilder.selectedModel === p.value
-                        ? 'bg-primary/20 text-primary border border-primary/30'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-white/5'}"
-                    title={p.desc}
-                >
-                    <span>{p.icon}</span>
-                    <span class="ml-1">{p.label}</span>
-                </button>
-            {/each}
+            Premium Engine
         </div>
     </div>
 
@@ -816,7 +863,8 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                     class="absolute inset-0 w-3 h-3 rounded-full bg-primary animate-ping opacity-20"
                                 ></div>
                             </div>
-                            <span class="text-primary">AI is generating...</span
+                            <span class="text-primary"
+                                >BigLot.ai is generating...</span
                             >
                         {:else if isReady}
                             <div
@@ -856,7 +904,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                 {/if}
 
                 <!-- BigLot AI Agent Activity -->
-                {#if isGenerating || isReady || progress.status === 'error'}
+                {#if isGenerating || isReady || progress.status === "error"}
                     <div class="mt-4">
                         <div class="flex items-center justify-between mb-2">
                             <button
@@ -873,7 +921,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                 class="indicator-btn indicator-btn-primary cursor-default"
                             >
                                 <Sparkles size={14} />
-                                BigLot AI Agent
+                                BigLot.ai Agent
                             </span>
                         </div>
                         {#if showPreview}
@@ -907,45 +955,46 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                         <div
                                             class="text-sm font-semibold text-foreground/90"
                                         >
-                                            BigLot AI Agent
+                                            BigLot.ai Agent
                                         </div>
                                         <div
                                             class="text-xs text-muted-foreground"
                                         >
-                                            {#if isGenerating}
-                                                <span class="text-green-400"
+                                            {#if isGenerating || (isReady && !showFinalSuccess)}
+                                                <span
+                                                    class="text-green-400 animate-pulse"
                                                     >● Working</span
                                                 >
-                                            {:else if isReady}
+                                            {:else if isReady && showFinalSuccess}
                                                 <span class="text-primary"
                                                     >● Completed</span
                                                 >
                                             {:else}
                                                 <span>● Idle</span>
                                             {/if}
-                                            {#if indicatorBuilder.selectedModel}
-                                                <span class="ml-2 opacity-50"
-                                                    >Model: {indicatorBuilder.selectedModel}</span
-                                                >
-                                            {/if}
+                                            <span class="ml-2 opacity-50"
+                                                >System: Secure</span
+                                            >
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Activity Log -->
                                 <div
+                                    bind:this={logContainer}
                                     class="px-4 py-3 space-y-2.5 max-h-[300px] overflow-y-auto indicator-scroll"
                                 >
-                                    {#if activityLog.length}
-                                        {#each activityLog as entry, i (entry.id)}
+                                    {#if displayedLogs.length}
+                                        {#each displayedLogs as entry, i (entry.id)}
                                             <div class="flex items-start gap-3">
                                                 <div
                                                     class={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${getLogDotClass(
                                                         entry.type,
                                                     )}`}
-                                                    class:animate-pulse={isGenerating &&
+                                                    class:animate-pulse={(isGenerating ||
+                                                        !showFinalSuccess) &&
                                                         i ===
-                                                            activityLog.length -
+                                                            displayedLogs.length -
                                                                 1}
                                                 ></div>
                                                 <div class="min-w-0">
@@ -981,7 +1030,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                         </div>
                                     {/if}
 
-                                    {#if isGenerating}
+                                    {#if isGenerating || (isReady && !showFinalSuccess)}
                                         <div
                                             class="mt-1 flex items-center gap-1.5 pl-5"
                                         >
@@ -997,7 +1046,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                         </div>
                                     {/if}
 
-                                    {#if isReady}
+                                    {#if isReady && showFinalSuccess}
                                         <div class="flex items-start gap-3">
                                             <div class="mt-0.5 flex-shrink-0">
                                                 <Check
@@ -1028,7 +1077,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                     <span
                                         class="text-[10px] text-muted-foreground/40"
                                     >
-                                        Powered by BigLot.ai · AI Agent
+                                        Powered by BigLot.ai
                                     </span>
                                     <span
                                         class="text-[10px] text-primary/60 flex items-center gap-1"
@@ -1051,21 +1100,8 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                 {/if}
 
                 <!-- Generated Code Section -->
-                {#if isReady && progress.generatedCode}
+                {#if isReady && progress.generatedCode && showFinalSuccess}
                     <div class="space-y-3 mt-4">
-                        <!-- Reference Badge -->
-                        {#if indicatorBuilder.referenceUsed}
-                            <div class="flex items-center gap-2 py-2 px-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                                <span class="text-sm">📚</span>
-                                <span class="text-xs text-purple-300">
-                                    Based on: <span class="font-semibold">{indicatorBuilder.referenceUsed}</span>
-                                </span>
-                                <span class="ml-auto px-2 py-0.5 rounded-full bg-purple-500/20 text-[10px] text-purple-300 border border-purple-500/30">
-                                    Reference-Enhanced
-                                </span>
-                            </div>
-                        {/if}
-
                         <!-- Indicator Info -->
                         {#if loadedModule}
                             <div
@@ -1111,6 +1147,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                             <button
                                 onclick={handleCopyCode}
                                 class="indicator-btn"
+                                class:indicator-btn-success={copied}
                             >
                                 {#if copied}
                                     <Check size={14} class="text-green-400" />

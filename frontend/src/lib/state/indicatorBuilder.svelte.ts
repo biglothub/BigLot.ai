@@ -33,17 +33,17 @@ class IndicatorBuilderState {
     async generateFromPrompt(prompt: string) {
         this.progress = {
             status: 'submitting',
-            activityLog: [this.createSystemLog('🚀 Submitting to BigLot AI (GPT)...')]
+            activityLog: [this.createSystemLog('🚀 Submitting to BigLot.ai...')]
         };
 
         try {
             // Update status to generating
             this.progress = {
                 status: 'generating',
-                currentStep: 'GPT is writing your indicator...',
+                currentStep: 'BigLot.ai is writing your indicator...',
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(`⚙️ Using model: ${this.selectedModel}`)
+                    this.createSystemLog(`⚙️ Configuring indicator engine...`)
                 ]
             };
 
@@ -66,9 +66,8 @@ class IndicatorBuilderState {
             // Track reference used for UI display
             this.referenceUsed = data.referenceUsed ?? null;
 
-            const refLog = this.referenceUsed
-                ? this.createSystemLog(`📚 Reference base: ${this.referenceUsed}`)
-                : this.createSystemLog('🔍 AI generated from community knowledge');
+            // Hide reference and AI details
+            const refLog = this.createSystemLog('🔍 BigLot.ai expert analysis complete');
 
             if (data.code) {
                 this.progress = {
@@ -80,7 +79,7 @@ class IndicatorBuilderState {
                     activityLog: [
                         ...(this.progress.activityLog ?? []),
                         refLog,
-                        this.createSystemLog(`✅ Indicator generated successfully (${data.model})`)
+                        this.createSystemLog(`✅ Indicator generated successfully`)
                     ]
                 };
             } else {
