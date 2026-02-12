@@ -5,6 +5,7 @@
 import type {
     IndicatorGenerationStatus,
     IndicatorGenerationProgress,
+    IndicatorActivityLog,
     CustomIndicator,
     IndicatorConfig,
     ManusAgentProfile
@@ -23,6 +24,9 @@ class IndicatorBuilderState {
     isBuilderOpen = $state(false);
     selectedProfile = $state<ManusAgentProfile>('manus-1.6');
 
+    // Reference tracking
+    referenceUsed = $state<string | null>(null);
+
     // Polling interval
     private pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -30,7 +34,10 @@ class IndicatorBuilderState {
      * Generate a new indicator from a prompt
      */
     async generateFromPrompt(prompt: string, existingTaskId?: string) {
-        this.progress = { status: 'submitting' };
+        this.progress = {
+            status: 'submitting',
+            activityLog: [this.createSystemLog('Submitting task to BigLot AI...')]
+        };
 
         try {
             const res = await fetch('/api/manus', {
@@ -50,11 +57,23 @@ class IndicatorBuilderState {
 
             const data = await res.json();
 
+            // Track reference used for UI display
+            this.referenceUsed = data.referenceUsed ?? null;
+
+            const refLog = this.referenceUsed
+                ? this.createSystemLog(`📚 Using reference base: ${this.referenceUsed}`)
+                : this.createSystemLog('🔍 No library match — AI searching TradingView community for best approach');
+
             this.progress = {
                 status: 'generating',
                 taskId: data.taskId,
                 taskUrl: data.taskUrl,
-                currentStep: 'BigLot AI is writing your indicator...'
+                currentStep: 'BigLot AI is writing your indicator...',
+                activityLog: [
+                    ...(this.progress.activityLog ?? []),
+                    this.createSystemLog('Task accepted by AI agent'),
+                    refLog
+                ]
             };
 
             // Start polling for completion
@@ -63,7 +82,11 @@ class IndicatorBuilderState {
         } catch (err: any) {
             this.progress = {
                 status: 'error',
-                error: err.message || 'Something went wrong'
+                error: err.message || 'Something went wrong',
+                activityLog: [
+                    ...(this.progress.activityLog ?? []),
+                    this.createSystemLog(err.message || 'Something went wrong')
+                ]
             };
         }
     }
@@ -80,10 +103,11 @@ class IndicatorBuilderState {
                 const webhookRes = await fetch(`/api/manus/webhook?taskId=${taskId}`);
                 if (webhookRes.ok) {
                     const webhookData = await webhookRes.json();
-                    if (webhookData.latestStep) {
+                    if (webhookData.latestStep || webhookData.activityLog) {
                         this.progress = {
                             ...this.progress,
-                            currentStep: webhookData.latestStep
+                            currentStep: webhookData.latestStep ?? this.progress.currentStep,
+                            activityLog: webhookData.activityLog ?? this.progress.activityLog
                         };
                     }
                 }
@@ -104,7 +128,11 @@ class IndicatorBuilderState {
                             generatedCode: data.code,
                             generatedPreviewCode: data.previewCode,
                             generatedConfig: data.config,
-                            currentStep: 'Indicator ready!'
+                            currentStep: 'Indicator ready!',
+                            activityLog: [
+                                ...(this.progress.activityLog ?? []),
+                                this.createSystemLog('Indicator generated successfully')
+                            ]
                         };
                     } else {
                         // Code was in text output but couldn't be parsed — show raw
@@ -112,7 +140,11 @@ class IndicatorBuilderState {
                             status: 'ready',
                             taskId,
                             generatedCode: data.textOutput || '// No code generated',
-                            currentStep: 'Check the generated code below'
+                            currentStep: 'Check the generated code below',
+                            activityLog: [
+                                ...(this.progress.activityLog ?? []),
+                                this.createSystemLog('Task completed without parsable code')
+                            ]
                         };
                     }
                     return;
@@ -123,7 +155,11 @@ class IndicatorBuilderState {
                     this.progress = {
                         status: 'error',
                         taskId,
-                        error: data.error || 'Task failed'
+                        error: data.error || 'Task failed',
+                        activityLog: [
+                            ...(this.progress.activityLog ?? []),
+                            this.createSystemLog(data.error || 'Task failed')
+                        ]
                     };
                     return;
                 }
@@ -139,6 +175,15 @@ class IndicatorBuilderState {
             clearInterval(this.pollInterval);
             this.pollInterval = null;
         }
+    }
+
+    private createSystemLog(message: string): IndicatorActivityLog {
+        return {
+            id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            type: 'system',
+            message,
+            receivedAt: Date.now()
+        };
     }
 
     /**
@@ -232,6 +277,7 @@ class IndicatorBuilderState {
     reset() {
         this.stopPolling();
         this.progress = { status: 'idle' };
+        this.referenceUsed = null;
     }
 
     /**

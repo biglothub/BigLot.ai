@@ -28,6 +28,7 @@
     import { type IndicatorModule } from "$lib/indicatorEngine";
     import IndicatorChart from "./IndicatorChart.svelte";
     import type {
+        IndicatorActivityLog,
         IndicatorValue,
         ManusAgentProfile,
         OHLCV,
@@ -82,10 +83,33 @@
     ];
 
     const progress = $derived(indicatorBuilder.progress);
+    const activityLog = $derived(progress.activityLog || []);
     const isGenerating = $derived(
         progress.status === "generating" || progress.status === "submitting",
     );
     const isReady = $derived(progress.status === "ready");
+
+    function formatLogTime(timestamp: number): string {
+        return new Date(timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+        });
+    }
+
+    function getLogTypeLabel(type: IndicatorActivityLog["type"]): string {
+        if (type === "task_created") return "Created";
+        if (type === "task_progress") return "Progress";
+        if (type === "task_stopped") return "Stopped";
+        return "System";
+    }
+
+    function getLogDotClass(type: IndicatorActivityLog["type"]): string {
+        if (type === "task_created") return "bg-primary";
+        if (type === "task_progress") return "bg-green-400";
+        if (type === "task_stopped") return "bg-yellow-400";
+        return "bg-white/30";
+    }
 
     function handleSubmit() {
         if (!prompt.trim() || isGenerating) return;
@@ -915,56 +939,64 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                 <div
                                     class="px-4 py-3 space-y-2.5 max-h-[300px] overflow-y-auto indicator-scroll"
                                 >
-                                    <div class="flex items-start gap-3">
-                                        <div
-                                            class="mt-1 w-2 h-2 rounded-full bg-primary flex-shrink-0"
-                                        ></div>
-                                        <div>
-                                            <div
-                                                class="text-xs text-foreground/70"
-                                            >
-                                                Task created
+                                    {#if activityLog.length}
+                                        {#each activityLog as entry, i (entry.id)}
+                                            <div class="flex items-start gap-3">
+                                                <div
+                                                    class={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${getLogDotClass(
+                                                        entry.type,
+                                                    )}`}
+                                                    class:animate-pulse={isGenerating &&
+                                                        i ===
+                                                            activityLog.length -
+                                                                1}
+                                                ></div>
+                                                <div class="min-w-0">
+                                                    <div
+                                                        class="text-xs text-foreground/75 break-words"
+                                                    >
+                                                        {entry.message}
+                                                    </div>
+                                                    <div
+                                                        class="text-[10px] text-muted-foreground/50"
+                                                    >
+                                                        [{getLogTypeLabel(
+                                                            entry.type,
+                                                        )}] {formatLogTime(
+                                                            entry.receivedAt,
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div
-                                                class="text-[10px] text-muted-foreground/50"
-                                            >
-                                                Analyzing your requirements...
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {#if progress.currentStep}
+                                        {/each}
+                                    {:else}
                                         <div class="flex items-start gap-3">
                                             <div
-                                                class="mt-1 w-2 h-2 rounded-full flex-shrink-0"
-                                                class:bg-green-400={isGenerating}
-                                                class:animate-pulse={isGenerating}
-                                                class:bg-primary={!isGenerating}
+                                                class="mt-1 w-2 h-2 rounded-full bg-white/30 flex-shrink-0"
                                             ></div>
                                             <div>
                                                 <div
-                                                    class="text-xs text-foreground/70"
+                                                    class="text-xs text-foreground/60"
                                                 >
-                                                    {progress.currentStep}
+                                                    Waiting for AI activity...
                                                 </div>
-                                                {#if isGenerating}
-                                                    <div
-                                                        class="mt-1 flex items-center gap-1.5"
-                                                    >
-                                                        <div
-                                                            class="ai-typing-dot"
-                                                        ></div>
-                                                        <div
-                                                            class="ai-typing-dot"
-                                                            style="animation-delay: 0.15s"
-                                                        ></div>
-                                                        <div
-                                                            class="ai-typing-dot"
-                                                            style="animation-delay: 0.3s"
-                                                        ></div>
-                                                    </div>
-                                                {/if}
                                             </div>
+                                        </div>
+                                    {/if}
+
+                                    {#if isGenerating}
+                                        <div
+                                            class="mt-1 flex items-center gap-1.5 pl-5"
+                                        >
+                                            <div class="ai-typing-dot"></div>
+                                            <div
+                                                class="ai-typing-dot"
+                                                style="animation-delay: 0.15s"
+                                            ></div>
+                                            <div
+                                                class="ai-typing-dot"
+                                                style="animation-delay: 0.3s"
+                                            ></div>
                                         </div>
                                     {/if}
 
@@ -1024,6 +1056,19 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                 <!-- Generated Code Section -->
                 {#if isReady && progress.generatedCode}
                     <div class="space-y-3 mt-4">
+                        <!-- Reference Badge -->
+                        {#if indicatorBuilder.referenceUsed}
+                            <div class="flex items-center gap-2 py-2 px-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                                <span class="text-sm">📚</span>
+                                <span class="text-xs text-purple-300">
+                                    Based on: <span class="font-semibold">{indicatorBuilder.referenceUsed}</span>
+                                </span>
+                                <span class="ml-auto px-2 py-0.5 rounded-full bg-purple-500/20 text-[10px] text-purple-300 border border-purple-500/30">
+                                    Reference-Enhanced
+                                </span>
+                            </div>
+                        {/if}
+
                         <!-- Indicator Info -->
                         {#if loadedModule}
                             <div

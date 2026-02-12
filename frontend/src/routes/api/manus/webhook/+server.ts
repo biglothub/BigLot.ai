@@ -5,8 +5,13 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import type { ManusWebhookEvent } from '$lib/types/indicator';
 
+type StoredWebhookEvent = {
+    event: ManusWebhookEvent;
+    receivedAt: number;
+};
+
 // In-memory store for webhook events (in production, use Redis/DB)
-const webhookEvents = new Map<string, ManusWebhookEvent[]>();
+const webhookEvents = new Map<string, StoredWebhookEvent[]>();
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
@@ -18,7 +23,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
         if (taskId) {
             const existing = webhookEvents.get(taskId) || [];
-            existing.push(event);
+            existing.push({
+                event,
+                receivedAt: Date.now()
+            });
             webhookEvents.set(taskId, existing);
 
             // Keep only last 50 events per task to prevent memory leak
@@ -46,18 +54,39 @@ export const GET: RequestHandler = async ({ url }) => {
 
     // Get latest progress message
     const latestProgress = events
-        .filter(e => e.event_type === 'task_progress')
+        .filter(e => e.event.event_type === 'task_progress')
         .pop();
 
     const stoppedEvent = events
-        .find(e => e.event_type === 'task_stopped');
+        .find(e => e.event.event_type === 'task_stopped');
+
+    const activityLog = events.map((item, idx) => {
+        const event = item.event;
+        let message = 'AI event received';
+        if (event.event_type === 'task_created') {
+            message = event.task_detail?.message || 'Task created';
+        } else if (event.event_type === 'task_progress') {
+            message = event.progress_detail?.message || 'Working...';
+        } else if (event.event_type === 'task_stopped') {
+            const reason = event.task_detail?.stop_reason;
+            message = reason ? `Task stopped (${reason})` : 'Task completed';
+        }
+
+        return {
+            id: event.event_id || `${event.event_type}-${idx}`,
+            type: event.event_type,
+            message,
+            receivedAt: item.receivedAt
+        };
+    });
 
     return json({
         taskId,
         events: events.length,
-        latestStep: latestProgress?.progress_detail?.message,
+        latestStep: latestProgress?.event.progress_detail?.message,
+        activityLog,
         isCompleted: !!stoppedEvent,
-        stopReason: stoppedEvent?.task_detail?.stop_reason,
-        attachments: stoppedEvent?.task_detail?.attachments
+        stopReason: stoppedEvent?.event.task_detail?.stop_reason,
+        attachments: stoppedEvent?.event.task_detail?.attachments
     });
 };

@@ -141,6 +141,13 @@ export type IndicatorGenerationStatus =
     | 'ready'
     | 'error';
 
+export type IndicatorActivityLog = {
+    id: string;
+    type: 'task_created' | 'task_progress' | 'task_stopped' | 'system';
+    message: string;
+    receivedAt: number;
+};
+
 export type IndicatorGenerationProgress = {
     status: IndicatorGenerationStatus;
     taskId?: string;
@@ -150,4 +157,5 @@ export type IndicatorGenerationProgress = {
     generatedCode?: string;
     generatedPreviewCode?: string;
     generatedConfig?: IndicatorConfig;
+    activityLog?: IndicatorActivityLog[];
 };

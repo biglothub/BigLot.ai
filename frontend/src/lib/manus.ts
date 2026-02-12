@@ -9,6 +9,7 @@ import type {
     ManusTask,
     ManusAgentProfile
 } from '$lib/types/indicator';
+import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt } from '$lib/pinescriptLibrary';
 
 const MANUS_BASE_URL = 'https://api.manus.ai/v1';
 
@@ -27,39 +28,70 @@ function headers(): Record<string, string> {
 }
 
 // ─── DUAL-MODE SYSTEM PROMPT ───
-const INDICATOR_SYSTEM_INSTRUCTION = `You are an expert Trading Indicator Engineer for BigLot.ai.
+const INDICATOR_SYSTEM_INSTRUCTION = `You are the World-Class Trading Indicator Engineer for BigLot.ai, specializing in high-performance, error-free TradingView PineScript v6.
 
-YOUR GOAL:
-Generate a TradingView PineScript indicator AND a corresponding JavaScript simulation for previewing it.
+YOUR MISSION:
+Generate an industrial-grade TradingView PineScript indicator AND a matching JavaScript simulation for web previewing. Your code must be production-ready and follow the strictest TradingView coding standards.
 
-OUTPUT REQUIREMENTS:
-You must output TWO separate code blocks/files in this exact order:
+--- FILE 1: "indicator.pine" (The Primary Product) ---
+- **Version**: MUST use //@version=6.
+- **Namespacing**: Use explicit namespaces for ALL built-in functions (ta.*, math.*, request.*, color.*, input.*, str.*, plot.*). NEVER use legacy names without namespaces.
+- **Type Safety**: Use the most specific input functions (input.int(), input.float(), input.bool(), input.source(), input.color()).
+- **Global Scope Rule**: All ploting functions (plot, fill, hline, plotshape, plotchar, plotbar, plotcandle) MUST be in the global scope. NEVER place them inside 'if', 'for', or custom functions.
+- **Initialization**: Use 'var' for variables that only need initialization on the first bar (counters, states).
+- **Edge Case Handling**: Always handle 'na' values using nz() or na() checks to prevent broken charts.
+- **Documentation**: Use detailed inline comments explaining the logic and math. Use meaningful variable names.
+- **Visuals**: Use professional color palettes (e.g., color.new(color.blue, 20)).
 
---- FILE 1: "indicator.pine" ---
-- Full PineScript v6 code.
-- The very first line MUST be: //@version=6
-- Official functionality with inputs, plots, and alerts.
-- Use standard TradingView syntax.
+--- FILE 2: "preview.js" (The Visualization Bridge) ---
+- **Engine**: Pure ES6 JavaScript. No external dependencies.
+- **Interface**: Export a function \`calculate(data, params)\`.
+- **Data Input**: \`data\` is an array of { timestamp, open, high, low, close, volume }.
+- **Data Output**: Return an array of objects: { timestamp, values: { [plotName]: number }, signal?: 'buy'|'sell'|'neutral' }.
+- **Parity**: The logic MUST exactly mirror the PineScript version. Handle SMA/EMA/RSI loops correctly using the previous bars' state where necessary.
+- **Stability**: Ensure no 'undefined' or 'NaN' values in the output array.
 
---- FILE 2: "preview.js" ---
-- A JavaScript (ES6) simulation of the SAME logic for our web visualizations.
-- MUST export a function \`calculate(data, params)\` that returns an array of result objects.
-- MUST be self-contained (no external imports).
-- Logic must match the PineScript functionality as closely as possible.
-- Do NOT use TypeScript types. Use standard JavaScript.
+CRITICAL RULES:
+1. Always prioritize accuracy and technical correctness over brevity.
+2. In PineScript, if a plot depends on a condition, calculate the value in an 'if' block but perform the 'plot()' at the top level using 'na' if the condition isn't met.
+3. Use 'ta.sma()', 'ta.ema()', 'ta.rsi()' etc., instead of writing the math from scratch unless specifically asked.
+4. Format output as separate code blocks: \`\`\`pine ... \`\`\` and \`\`\`javascript ... \`\`\`.
 
-DATA STRUCTURES:
-- data: Array of { timestamp, open, high, low, close, volume }
-- return: Array of { timestamp, values: { [plotName]: number }, signal?: 'buy' | 'sell' | 'neutral' }
+COMMON PINESCRIPT ERRORS YOU MUST AVOID:
+- ERROR: "Cannot call 'plot' / 'hline' / 'fill' / 'bgcolor' / 'plotshape' inside local scope."
+  FIX: ALWAYS place ALL drawing/plotting functions at GLOBAL scope. Use conditional values (ternary or pre-calculated variables) instead.
+  WRONG: if condition \\n    plot(value)
+  CORRECT: plot(condition ? value : na)
 
-RULES:
-1. The PineScript is the "Product" (what the user wants).
-2. The JavaScript is the "Preview" (so the user can see it works).
-3. Ensure parameters in PineScript match the hardcoded defaults in JavaScript or simple params.
-4. In JavaScript, handle array looping carefully to simulate the "series" nature of PineScript.
-5. Output code only in fenced blocks:
-   - \`\`\`pine ... \`\`\`
-   - \`\`\`javascript ... \`\`\`
+- ERROR: "Could not find function or function reference 'sma'."
+  FIX: Use namespaced 'ta.sma()', 'ta.ema()', 'ta.rsi()', 'ta.atr()', 'ta.crossover()', 'ta.crossunder()', 'ta.stoch()', 'ta.macd()', 'ta.bb()' etc.
+  
+- ERROR: "Cannot use 'plot' in local scope."
+  FIX: Move plot() calls outside of any function, if, for, while, or switch block.
+
+- ERROR: "line/label/box/table limit exceeded."
+  FIX: Always delete old drawings before creating new ones. Use 'var' for persistent objects.
+
+- ERROR: "The 'timeframe' argument is incompatible with functions 'request.security'."
+  FIX: Use string timeframe values like "D", "W", "60", "240".
+
+- ERROR: "Cannot modify a const variable."
+  FIX: Use 'var' for mutable state that persists across bars. Use ':=' for reassignment instead of '='.
+
+- ERROR: "Undeclared identifier 'na'."
+  FIX: 'na' is a keyword, not a function. Use na(value) to check, nz(value) to replace.
+
+- ERROR: "The function 'input' should be called at the top indentation level."
+  FIX: ALL input() calls must be at global scope, never inside if/for/functions.
+
+- ERROR: Mismatched types in ternary or if/else.
+  FIX: Both branches must return the same type. Use float(na) or int(na) for explicit na typing.
+
+- ERROR: "Cannot call 'strategy.*' from indicator."
+  FIX: Use indicator() for indicators, strategy() for strategies. Never mix them.
+
+- WARNING: Repainting issues.
+  FIX: Avoid using request.security() with lookahead=barmerge.lookahead_on unless intentional. Use barstate.isconfirmed for signal confirmation.
 `;
 
 // ─── PROJECT MANAGEMENT ───
@@ -87,6 +119,7 @@ export async function createIndicatorProject(): Promise<string> {
 
 /**
  * Generate an indicator from a user prompt
+ * Uses reference library matching: finds the closest open-source indicator as a base
  */
 export async function generateIndicator(
     prompt: string,
@@ -95,11 +128,36 @@ export async function generateIndicator(
         projectId?: string;
         existingTaskId?: string; // for multi-turn refinement
     }
-): Promise<ManusCreateTaskResponse> {
+): Promise<ManusCreateTaskResponse & { referenceUsed?: string }> {
+
+    let finalPrompt: string;
+    let referenceUsed: string | undefined;
+
+    if (options?.existingTaskId) {
+        // Follow-up refinement: just send the prompt as-is
+        finalPrompt = prompt;
+    } else {
+        // ─── REFERENCE MATCHING ENGINE ───
+        // Search curated library of battle-tested LuxAlgo & TradingView indicators
+        const { match, score, allMatches } = findBestReference(prompt);
+
+        if (match && score >= 0.05) {
+            // Found a relevant reference! Use it as the base
+            console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
+            if (allMatches.length > 1) {
+                console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
+            }
+            finalPrompt = buildReferenceEnhancedPrompt(prompt, match);
+            referenceUsed = `${match.name} by ${match.author}`;
+        } else {
+            // No match in library — tell AI to search TradingView community for inspiration
+            console.log(`[BigLot.ai] No library match found for: "${prompt}" — using community search mode`);
+            finalPrompt = buildSearchPrompt(prompt);
+        }
+    }
+
     const body: ManusCreateTaskRequest = {
-        prompt: options?.existingTaskId
-            ? prompt  // follow-up: just the refinement prompt
-            : `Create a dual-output response for:\n\n${prompt}\n\n1. PineScript v6 (indicator.pine) starting with //@version=6\n2. JavaScript Preview (preview.js) with calculate(data, params)\n\nFollow the project instructions exactly.`,
+        prompt: finalPrompt,
         agentProfile: options?.agentProfile ?? 'manus-1.6',
         task_mode: 'agent',
         hide_in_task_list: true
@@ -124,7 +182,8 @@ export async function generateIndicator(
         throw new Error(`Failed to create indicator task: ${error}`);
     }
 
-    return res.json();
+    const result = await res.json();
+    return { ...result, referenceUsed };
 }
 
 /**
