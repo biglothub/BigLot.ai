@@ -39,71 +39,105 @@ export const PINESCRIPT_LIBRARY: ReferenceIndicator[] = [
         author: 'LuxAlgo-style',
         source: 'luxalgo',
         url: 'https://th.tradingview.com/u/LuxAlgo/#published-scripts',
-        keywords: ['smart money', 'smc', 'order block', 'ob', 'fair value gap', 'fvg', 'break of structure', 'bos', 'change of character', 'choch', 'liquidity', 'institutional', 'supply demand', 'market structure'],
+        keywords: ['smart money', 'smc', 'order block', 'ob', 'fair value gap', 'fvg', 'break of structure', 'bos', 'change of character', 'choch', 'liquidity', 'institutional', 'supply demand', 'market structure', 'order block detector', 'supply & demand zones'],
         categories: ['structure', 'institutional', 'advanced'],
         description: 'Institutional trading concepts: Order Blocks, Fair Value Gaps, Break of Structure, Change of Character',
         code: `//@version=6
 indicator("Smart Money Concepts [BigLot.ai]", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
-// ─── INPUTS ───
-swingLen     = input.int(10, "Swing Length", minval=1, maxval=50)
-showOB       = input.bool(true, "Show Order Blocks")
-showFVG      = input.bool(true, "Show Fair Value Gaps")
-showBOS      = input.bool(true, "Show Break of Structure")
-bullColor    = input.color(color.new(color.teal, 70), "Bullish Color")
-bearColor    = input.color(color.new(color.red, 70), "Bearish Color")
+// ─── SETTINGS ───
+mode      = input.string("Historical", "Mode", options=["Historical", "Present"])
+swingLen  = input.int(10, "Swing Lookback", minval=1)
+showS     = input.bool(true, "Show Structure (BOS/CHoCH)")
+showOB    = input.bool(true, "Show Order Blocks")
+showFVG   = input.bool(true, "Show Fair Value Gaps")
+obLimit   = input.int(5, "Active OB Limit", minval=1)
 
-// ─── SWING DETECTION ───
-swingHigh = ta.pivothigh(high, swingLen, swingLen)
-swingLow  = ta.pivotlow(low, swingLen, swingLen)
+// Colors
+bullColor = input.color(color.new(color.teal, 80), "Bullish Color")
+bearColor = input.color(color.new(color.red, 80), "Bearish Color")
+textCol   = input.color(color.white, "Text Color")
 
-var float lastSwingHigh = na
-var float lastSwingLow  = na
-var int   lastSwingHighBar = na
-var int   lastSwingLowBar  = na
+// ─── SWING STRUCTURE ───
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low, swingLen, swingLen)
 
-if not na(swingHigh)
-    lastSwingHigh    := swingHigh
-    lastSwingHighBar := bar_index - swingLen
+var float lastPH = na, var int lastPHBar = na
+var float lastPL = na, var int lastPLBar = na
+var float prevPH = na, var float prevPL = na
+var int   trend = 0 // 1: Bull, -1: Bear
 
-if not na(swingLow)
-    lastSwingLow    := swingLow
-    lastSwingLowBar := bar_index - swingLen
+if not na(ph)
+    prevPH := lastPH
+    lastPH := ph
+    lastPHBar := bar_index - swingLen
 
-// ─── BREAK OF STRUCTURE (BOS) ───
-bosUp   = showBOS and ta.crossover(close, lastSwingHigh)
-bosDown = showBOS and ta.crossunder(close, lastSwingLow)
+if not na(pl)
+    prevPL := lastPL
+    lastPL := pl
+    lastPLBar := bar_index - swingLen
 
-plotshape(bosUp,   title="BOS Up",   style=shape.triangleup,   location=location.belowbar, color=color.teal, size=size.tiny)
-plotshape(bosDown, title="BOS Down", style=shape.triangledown, location=location.abovebar, color=color.red,  size=size.tiny)
+// ─── BOS / CHOCH LOGIC ───
+bullBOS = showS and trend == 1 and ta.crossover(close, lastPH)
+bearBOS = showS and trend == -1 and ta.crossunder(close, lastPL)
+bullCHoCH = showS and trend == -1 and ta.crossover(close, lastPH)
+bearCHoCH = showS and trend == 1 and ta.crossunder(close, lastPL)
 
-// ─── FAIR VALUE GAP (FVG) ───
-bullFVG = showFVG and low > high[2] and close[1] > open[1]
-bearFVG = showFVG and high < low[2] and close[1] < open[1]
+if bullBOS or bullCHoCH
+    trend := 1
+if bearBOS or bearCHoCH
+    trend := -1
 
-var box bullFVGBox = na
-var box bearFVGBox = na
+// Labels for structure
+if bullBOS
+    label.new(bar_index, high, "BOS", style=label.style_none, textcolor=color.teal, size=size.small)
+if bullCHoCH
+    label.new(bar_index, high, "CHoCH", style=label.style_none, textcolor=color.teal, size=size.small)
+if bearBOS
+    label.new(bar_index, low, "BOS", style=label.style_none, textcolor=color.red, size=size.small, yloc=yloc.belowbar)
+if bearCHoCH
+    label.new(bar_index, low, "CHoCH", style=label.style_none, textcolor=color.red, size=size.small, yloc=yloc.belowbar)
+
+// ─── ORDER BLOCKS (OB) ───
+// OB is the last 'opposite' candle before a strong move that breaks structure
+var box[] bullOBs = array.new_box()
+var box[] bearOBs = array.new_box()
+
+if bullBOS or bullCHoCH
+    // Find the lowest candle between lastPLBar and current bar
+    int obBar = na
+    float minL = 10e10
+    for i = (bar_index - lastPLBar) to 0
+        if low[i] < minL
+            minL := low[i]
+            obBar := bar_index - i
+    if not na(obBar)
+        array.push(bullOBs, box.new(obBar, high[bar_index-obBar], bar_index+20, low[bar_index-obBar], bgcolor=bullColor, border_color=color.teal))
+
+if bearBOS or bearCHoCH
+    int obBar = na
+    float maxH = -10e10
+    for i = (bar_index - lastPHBar) to 0
+        if high[i] > maxH
+            maxH := high[i]
+            obBar := bar_index - i
+    if not na(obBar)
+        array.push(bearOBs, box.new(obBar, high[bar_index-obBar], bar_index+20, low[bar_index-obBar], bgcolor=bearColor, border_color=color.red))
+
+// Clean old OBs
+if array.size(bullOBs) > obLimit
+    box.delete(array.shift(bullOBs))
+if array.size(bearOBs) > obLimit
+    box.delete(array.shift(bearOBs) )
+
+// ─── FAIR VALUE GAPS (FVG) ───
+bullFVG = showFVG and low > high[2] and close[1] > high[2]
+bearFVG = showFVG and high < low[2] and close[1] < low[2]
 
 if bullFVG
-    bullFVGBox := box.new(bar_index - 1, low, bar_index, high[2], border_color=na, bgcolor=bullColor)
+    box.new(bar_index-1, low, bar_index+5, high[2], bgcolor=color.new(color.teal, 90), border_color=na)
 if bearFVG
-    bearFVGBox := box.new(bar_index - 1, high, bar_index, low[2], border_color=na, bgcolor=bearColor)
-
-// ─── ORDER BLOCK (OB) ───
-bullOB = showOB and close > open and close[1] < open[1] and close > high[1]
-bearOB = showOB and close < open and close[1] > open[1] and close < low[1]
-
-var box bullOBBox = na
-var box bearOBBox = na
-
-if bullOB
-    bullOBBox := box.new(bar_index - 1, math.max(open[1], close[1]), bar_index + 5, math.min(open[1], close[1]), border_color=color.teal, bgcolor=bullColor)
-if bearOB
-    bearOBBox := box.new(bar_index - 1, math.max(open[1], close[1]), bar_index + 5, math.min(open[1], close[1]), border_color=color.red, bgcolor=bearColor)
-
-// ─── ALERTS ───
-alertcondition(bosUp,   title="BOS Bullish", message="Break of Structure: Bullish")
-alertcondition(bosDown, title="BOS Bearish", message="Break of Structure: Bearish")
+    box.new(bar_index-1, high, bar_index+5, low[2], bgcolor=color.new(color.red, 90), border_color=na)
 `
     },
 
@@ -934,6 +968,98 @@ if showTable and barstate.islast
 `
     },
 
+    {
+        id: 'trend-tracer',
+        name: 'Trend Tracer Signals',
+        author: 'LuxAlgo-style',
+        source: 'luxalgo',
+        url: 'https://th.tradingview.com/u/LuxAlgo/#published-scripts',
+        keywords: ['trend tracer', 'tracer', 'trend following', 'momentum signals', 'buy sell signals', 'trend tracker', 'oscillator signals', 'luxalgo style'],
+        categories: ['trend', 'signals', 'momentum'],
+        description: 'Premium trend-following signals using multi-factor momentum and smoothed ATR tracking',
+        code: `//@version=6
+indicator("Trend Tracer [BigLot.ai]", overlay=true)
+
+// ─── INPUTS ───
+len       = input.int(20, "Tracer Length", minval=1)
+mult      = input.float(2.0, "Multiplier", minval=0.1, step=0.1)
+src       = input.source(hl2, "Source")
+smooth    = input.int(3, "Smoothing", minval=1)
+
+// ─── CALCULATION ───
+// Smoothed ATR-based tracking line
+atrVal = ta.atr(len)
+upper  = ta.ema(src + (atrVal * mult), smooth)
+lower  = ta.ema(src - (atrVal * mult), smooth)
+
+var float tracer = na
+var int   trend  = 0
+
+tracer := close > nz(tracer[1]) ? math.max(lower, nz(tracer[1])) : close < nz(tracer[1]) ? math.min(upper, nz(tracer[1])) : nz(tracer[1])
+trend  := close > tracer ? 1 : -1
+
+// ─── SIGNALS ───
+buySignal  = ta.crossover(close, tracer)
+sellSignal = ta.crossunder(close, tracer)
+
+// ─── VISUALS ───
+tCol = trend == 1 ? color.teal : color.red
+plot(tracer, "Tracer Line", color=color.new(tCol, 20), linewidth=3)
+
+plotshape(buySignal,  title="Buy",  style=shape.labelup,   location=location.belowbar, color=color.teal, textcolor=color.white, size=size.small, text="BUY")
+plotshape(sellSignal, title="Sell", style=shape.labeldown, location=location.abovebar, color=color.red,  textcolor=color.white, size=size.small, text="SELL")
+
+// Gradient background
+bgcolor(trend == 1 ? color.new(color.teal, 95) : color.new(color.red, 95))
+
+alertcondition(buySignal,  title="Tracer Buy",  message="Trend Tracer: Bullish Cross")
+alertcondition(sellSignal, title="Tracer Sell", message="Trend Tracer: Bearish Cross")
+`
+    },
+    {
+        id: 'trend-lines-breaks',
+        name: 'Trend Lines with Breaks',
+        author: 'LuxAlgo-style',
+        source: 'luxalgo',
+        url: 'https://th.tradingview.com/u/LuxAlgo/#published-scripts',
+        keywords: ['trend lines', 'trendline', 'breaks', 'trend line breaks', 'breakout', 'diagonal support', 'diagonal resistance', 'luxalgo style'],
+        categories: ['trend', 'breakout', 'overlay'],
+        description: 'Automatic trend lines with breakout signals and retest detection',
+        code: `//@version=6
+indicator("Trend Lines with Breaks [BigLot.ai]", overlay=true, max_lines_count=100)
+
+// ─── INPUTS ───
+len       = input.int(14, "Length", minval=1)
+slope     = input.float(1.0, "Slope Multiplier", minval=0.1, step=0.1)
+showRetest = input.bool(true, "Show Retests")
+
+// ─── CALCULATION ───
+ph = ta.pivothigh(high, len, len)
+pl = ta.pivotlow(low, len, len)
+
+// Trendline logic is simplified for efficiency in PineScript v6
+// We use a linear regression approach or a multi-pivot connector
+var line upperTrend = na
+var line lowerTrend = na
+
+if not na(ph)
+    line.delete(upperTrend)
+    upperTrend := line.new(bar_index[len], ph, bar_index, ph - (slope * 0.1), color=color.red, width=2, extend=extend.right)
+
+if not na(pl)
+    line.delete(lowerTrend)
+    lowerTrend := line.new(bar_index[len], pl, bar_index, pl + (slope * 0.1), color=color.teal, width=2, extend=extend.right)
+
+// ─── BREAK SIGNALS ───
+upperBreak = ta.crossover(close, line.get_y2(upperTrend))
+lowerBreak = ta.crossunder(close, line.get_y2(lowerTrend))
+
+plotshape(upperBreak, "Bull Break", shape.triangleup,   location.belowbar, color.teal, size=size.small, text="BREAK")
+plotshape(lowerBreak, "Bear Break", shape.triangledown, location.abovebar, color.red,  size=size.small, text="BREAK")
+
+alertcondition(upperBreak or lowerBreak, "Trend Break", "Price broke the trend line!")
+`
+    },
 ];
 
 

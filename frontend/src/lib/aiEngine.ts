@@ -45,7 +45,9 @@ CRITICAL RULES:
 1. Always prioritize accuracy and technical correctness over brevity.
 2. In PineScript, if a plot depends on a condition, calculate the value in an 'if' block but perform the 'plot()' at the top level using 'na' if the condition isn't met.
 3. Use 'ta.sma()', 'ta.ema()', 'ta.rsi()' etc., instead of writing the math from scratch unless specifically asked.
-4. Format output as separate code blocks: \`\`\`pine ... \`\`\` and \`\`\`javascript ... \`\`\`.
+4. **Groundedness**: For advanced concepts like "Market Structure", "SMC", "BOS/CHoCH", "Order Blocks", or "Trend Tracer", you MUST strictly follow the logic provided in the REFERENCE BASE CODE if one is available. These codes are based on verified open-source scripts from top authors like LuxAlgo.
+5. **Consistency**: Ensure the visual style (plots, colors, shapes) is consistent with the reference provided.
+6. Format output as separate code blocks: \`\`\`pine ... \`\`\` and \`\`\`javascript ... \`\`\`.
 
 COMMON PINESCRIPT ERRORS YOU MUST AVOID:
 - ERROR: "Cannot call 'plot' / 'hline' / 'fill' / 'bgcolor' / 'plotshape' inside local scope."

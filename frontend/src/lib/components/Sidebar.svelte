@@ -8,7 +8,7 @@
         PanelLeftClose,
         PanelLeftOpen,
         BarChart3,
-        Sparkles,
+        Bot,
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import { fade } from "svelte/transition";
@@ -83,7 +83,7 @@
             href="/indicators"
             class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500/10 to-primary/10 hover:from-purple-500/20 hover:to-primary/20 text-foreground/80 hover:text-primary border border-white/5 hover:border-primary/20 rounded-lg transition-all duration-200 group"
         >
-            <Sparkles
+            <Bot
                 size={18}
                 class="text-purple-400 group-hover:text-primary transition-colors"
             />
@@ -116,8 +116,7 @@
                     role="button"
                     tabindex="0"
                     onkeydown={(e) =>
-                        e.key === "Enter" &&
-                        handleChatHistoryClick(chat.id)}
+                        e.key === "Enter" && handleChatHistoryClick(chat.id)}
                 >
                     <MessageSquare
                         size={16}

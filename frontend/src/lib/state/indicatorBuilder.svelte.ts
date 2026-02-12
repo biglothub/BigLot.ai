@@ -33,7 +33,7 @@ class IndicatorBuilderState {
     async generateFromPrompt(prompt: string) {
         this.progress = {
             status: 'submitting',
-            activityLog: [this.createSystemLog('🚀 Submitting to BigLot.ai...')]
+            activityLog: [this.createSystemLog('Submitting to BigLot.ai...')]
         };
 
         try {
@@ -43,7 +43,7 @@ class IndicatorBuilderState {
                 currentStep: 'BigLot.ai is writing your indicator...',
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(`⚙️ Configuring indicator engine...`)
+                    this.createSystemLog(`Configuring indicator engine...`)
                 ]
             };
 
@@ -67,7 +67,7 @@ class IndicatorBuilderState {
             this.referenceUsed = data.referenceUsed ?? null;
 
             // Hide reference and AI details
-            const refLog = this.createSystemLog('🔍 BigLot.ai expert analysis complete');
+            const refLog = this.createSystemLog('BigLot.ai expert analysis complete');
 
             if (data.code) {
                 this.progress = {
@@ -79,7 +79,7 @@ class IndicatorBuilderState {
                     activityLog: [
                         ...(this.progress.activityLog ?? []),
                         refLog,
-                        this.createSystemLog(`✅ Indicator generated successfully`)
+                        this.createSystemLog(`Indicator generated successfully`)
                     ]
                 };
             } else {
@@ -91,7 +91,7 @@ class IndicatorBuilderState {
                     activityLog: [
                         ...(this.progress.activityLog ?? []),
                         refLog,
-                        this.createSystemLog('⚠️ Completed but code block not detected — showing raw output')
+                        this.createSystemLog('Completed but code block not detected — showing raw output')
                     ]
                 };
             }
@@ -102,7 +102,7 @@ class IndicatorBuilderState {
                 error: err.message || 'Something went wrong',
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(`❌ ${err.message || 'Something went wrong'}`)
+                    this.createSystemLog(`${err.message || 'Something went wrong'}`)
                 ]
             };
         }

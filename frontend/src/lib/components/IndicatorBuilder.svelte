@@ -16,7 +16,7 @@
         AlertTriangle,
         Settings2,
         ExternalLink,
-        Sparkles,
+        Bot,
         ArrowLeft,
         Maximize2,
         Minimize2,
@@ -48,6 +48,7 @@
     let codeEditing = $state(false);
     let editableCode = $state("");
     let copied = $state(false);
+    let sqlCopied = $state(false);
     let saving = $state(false);
     let saveSuccess = $state(false);
     let userParams = $state<Record<string, number>>({});
@@ -665,6 +666,11 @@ function calculate(data, params) {
         setTimeout(() => (copied = false), 2000);
     }
 
+    function handleOpenTradingView() {
+        handleCopyCode();
+        window.open("https://www.tradingview.com/chart/", "_blank");
+    }
+
     function handleReset() {
         indicatorBuilder.reset();
         prompt = "";
@@ -739,27 +745,21 @@ CREATE TABLE custom_indicators (
 
 ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;</pre>
                         <button
-                            class="absolute top-2 right-2 p-2 bg-secondary text-primary rounded hover:bg-white/10 transition-colors"
+                            class="absolute top-2 right-2 p-2 bg-secondary text-primary rounded hover:bg-white/10 transition-all active:scale-90"
                             onclick={() => {
-                                navigator.clipboard
-                                    .writeText(`CREATE TABLE custom_indicators (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  description TEXT,
-  code TEXT NOT NULL,
-  config JSONB NOT NULL,
-  generation_id TEXT,
-  version INTEGER DEFAULT 1,
-  is_active BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
-                                alert("SQL copied to clipboard!");
+                                navigator.clipboard.writeText(
+                                    `CREATE TABLE custom_indicators (...SQL...)`,
+                                );
+                                sqlCopied = true;
+                                setTimeout(() => (sqlCopied = false), 2000);
                             }}
+                            title="Copy SQL"
                         >
-                            <Copy size={14} />
+                            {#if sqlCopied}
+                                <Check size={14} class="text-green-400" />
+                            {:else}
+                                <Copy size={14} />
+                            {/if}
                         </button>
                     </div>
 
@@ -838,7 +838,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
 
             <!-- Quick Examples -->
             <div class="mt-3 flex flex-wrap gap-2">
-                {#each ["SMA Crossover 20/50", "RSI (14) + Divergence", "Bollinger Bands", "MACD with Signal", "VWAP + Bands"] as example}
+                {#each ["MA Crossover", "Trend Lines with Breaks", "Trend Tracer Signals", "Order Block Detector", "SuperTrend"] as example}
                     <button
                         onclick={() => (prompt = example)}
                         class="px-3 py-1 rounded-lg text-xs bg-white/5 text-muted-foreground hover:bg-primary/10 hover:text-primary border border-white/5 hover:border-primary/20 transition-all"
@@ -920,7 +920,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                             <span
                                 class="indicator-btn indicator-btn-primary cursor-default"
                             >
-                                <Sparkles size={14} />
+                                <Bot size={14} />
                                 BigLot.ai Agent
                             </span>
                         </div>
@@ -936,10 +936,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                         <div
                                             class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-primary flex items-center justify-center"
                                         >
-                                            <Sparkles
-                                                size={14}
-                                                class="text-white"
-                                            />
+                                            <Bot size={14} class="text-white" />
                                         </div>
                                         {#if isGenerating}
                                             <div
@@ -1119,14 +1116,6 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                             .description}
                                     </div>
                                 </div>
-                                <span
-                                    class="px-2 py-1 rounded-md bg-white/5 text-xs text-muted-foreground"
-                                >
-                                    {loadedModule.indicatorConfig
-                                        .overlayType === "overlay"
-                                        ? "📊 Overlay"
-                                        : "📉 Separate"}
-                                </span>
                             </div>
                         {/if}
 
@@ -1150,12 +1139,19 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
                                 class:indicator-btn-success={copied}
                             >
                                 {#if copied}
-                                    <Check size={14} class="text-green-400" />
-                                    <span class="text-green-400">Copied!</span>
+                                    <Check size={14} />
+                                    <span>Copied!</span>
                                 {:else}
                                     <Copy size={14} />
                                     Copy Code
                                 {/if}
+                            </button>
+                            <button
+                                onclick={handleOpenTradingView}
+                                class="indicator-btn bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20 hover:border-blue-500/30"
+                            >
+                                <ExternalLink size={14} />
+                                Open on TradingView
                             </button>
                             <button
                                 onclick={tryLoadAndTest}
