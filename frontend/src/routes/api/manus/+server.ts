@@ -56,20 +56,33 @@ export const GET: RequestHandler = async ({ url }) => {
 
         // If completed, extract the indicator code
         if (task.status === 'completed') {
-            const { code, previewCode, fileUrl, textOutput } = extractIndicatorCode(task);
+            const { code, previewCode, pineFileUrl, previewFileUrl, textOutput } = extractIndicatorCode(task);
 
-            // If we got a file URL but no inline code, download the file
+            // Resolve PineScript source (inline text first, then output file)
             let finalCode = code;
-            if (!finalCode && fileUrl) {
+            if (!finalCode && pineFileUrl) {
                 try {
-                    finalCode = await downloadFile(fileUrl);
+                    finalCode = await downloadFile(pineFileUrl);
                 } catch (e) {
                     console.warn('Failed to download indicator file:', e);
                 }
             }
+            if (finalCode) {
+                finalCode = normalizePineToV6(finalCode);
+            }
+
+            // Resolve preview JS source (inline text first, then output file)
+            let finalPreviewCode = previewCode ? stripCodeFences(previewCode) : null;
+            if (!finalPreviewCode && previewFileUrl) {
+                try {
+                    finalPreviewCode = stripCodeFences(await downloadFile(previewFileUrl));
+                } catch (e) {
+                    console.warn('Failed to download preview file:', e);
+                }
+            }
 
             response.code = finalCode;
-            response.previewCode = previewCode; // Pass the TS preview
+            response.previewCode = finalPreviewCode;
             response.textOutput = textOutput;
 
             // Try to parse config from PineScript
@@ -122,4 +135,22 @@ function parsePineScriptConfig(code: string): any {
     }
 
     return config;
+}
+
+function normalizePineToV6(rawCode: string): string {
+    const clean = stripCodeFences(rawCode)
+        .replace(/\r\n/g, '\n')
+        .trim();
+    if (!clean) return clean;
+
+    // Remove any existing @version directives and force v6 as first line.
+    const body = clean.replace(/^\s*\/\/\s*@version\s*=\s*\d+\s*$/gm, '').trimStart();
+    return `//@version=6\n${body}`;
+}
+
+function stripCodeFences(raw: string): string {
+    return raw
+        .replace(/^```[a-zA-Z]*\s*\r?\n/, '')
+        .replace(/\r?\n```[\t ]*$/, '')
+        .trim();
 }

@@ -7,7 +7,6 @@ import type {
     ManusCreateTaskRequest,
     ManusCreateTaskResponse,
     ManusTask,
-    ManusGetTasksResponse,
     ManusAgentProfile
 } from '$lib/types/indicator';
 
@@ -34,10 +33,11 @@ YOUR GOAL:
 Generate a TradingView PineScript indicator AND a corresponding JavaScript simulation for previewing it.
 
 OUTPUT REQUIREMENTS:
-You must output TWO separate code blocks/files:
+You must output TWO separate code blocks/files in this exact order:
 
 --- FILE 1: "indicator.pine" ---
-- Full PineScript v5 code.
+- Full PineScript v6 code.
+- The very first line MUST be: //@version=6
 - Official functionality with inputs, plots, and alerts.
 - Use standard TradingView syntax.
 
@@ -57,6 +57,9 @@ RULES:
 2. The JavaScript is the "Preview" (so the user can see it works).
 3. Ensure parameters in PineScript match the hardcoded defaults in JavaScript or simple params.
 4. In JavaScript, handle array looping carefully to simulate the "series" nature of PineScript.
+5. Output code only in fenced blocks:
+   - \`\`\`pine ... \`\`\`
+   - \`\`\`javascript ... \`\`\`
 `;
 
 // ─── PROJECT MANAGEMENT ───
@@ -96,7 +99,7 @@ export async function generateIndicator(
     const body: ManusCreateTaskRequest = {
         prompt: options?.existingTaskId
             ? prompt  // follow-up: just the refinement prompt
-            : `Create a dual-output response for:\n\n${prompt}\n\n1. PineScript v5 (indicator.pine)\n2. JavaScript Preview (preview.js)\n\nFollow the project instructions exactly.`,
+            : `Create a dual-output response for:\n\n${prompt}\n\n1. PineScript v6 (indicator.pine) starting with //@version=6\n2. JavaScript Preview (preview.js) with calculate(data, params)\n\nFollow the project instructions exactly.`,
         agentProfile: options?.agentProfile ?? 'manus-1.6',
         task_mode: 'agent',
         hide_in_task_list: true
@@ -151,16 +154,18 @@ export async function getTask(taskId: string): Promise<ManusTask | null> {
  */
 export function extractIndicatorCode(task: ManusTask): {
     code: string | null;      // PineScript
-    previewCode: string | null; // TypeScript for preview
-    fileUrl: string | null;
+    previewCode: string | null; // JavaScript for preview
+    pineFileUrl: string | null;
+    previewFileUrl: string | null;
     textOutput: string;
 } {
     let code: string | null = null;
     let previewCode: string | null = null;
-    let fileUrl: string | null = null;
+    let pineFileUrl: string | null = null;
+    let previewFileUrl: string | null = null;
     let textOutput = '';
 
-    if (!task.output) return { code, previewCode, fileUrl, textOutput };
+    if (!task.output) return { code, previewCode, pineFileUrl, previewFileUrl, textOutput };
 
     for (const msg of task.output) {
         if (msg.role !== 'assistant') continue;
@@ -169,54 +174,54 @@ export function extractIndicatorCode(task: ManusTask): {
             if (content.type === 'output_text' && content.text) {
                 textOutput += content.text + '\n';
 
-                // 1. Extract PineScript
-                const pineMatch = content.text.match(/```(?:pinescript|pine)\s*\n([\s\S]*?)```/);
-                if (pineMatch) {
-                    code = pineMatch[1].trim();
-                } else if (content.text.includes('//@version=5')) {
-                    // Fallback for unlabeled code block
-                    const blockMatch = content.text.match(/```\s*\n(.*?@version=5[\s\S]*?)```/);
-                    if (blockMatch) code = blockMatch[1].trim();
-                }
+                const blocks = [...content.text.matchAll(/```(\w+)?\s*\r?\n([\s\S]*?)```/g)];
+                for (const block of blocks) {
+                    const lang = (block[1] ?? '').toLowerCase();
+                    const blockText = block[2].trim();
+                    if (!blockText) continue;
 
-                // 2. Extract JavaScript Preview (try multiple code-block labels)
-                const jsPatterns = [
-                    /```(?:javascript|js)\s*\n([\s\S]*?)```/,
-                    /```(?:typescript|ts)\s*\n([\s\S]*?)```/,
-                ];
-                for (const pattern of jsPatterns) {
-                    if (previewCode) break;
-                    const jsMatch = content.text.match(pattern);
-                    if (jsMatch) {
-                        const extracted = jsMatch[1].trim();
-                        if (extracted.includes('calculate')) {
-                            previewCode = extracted;
-                        }
+                    if (!code && (lang.includes('pine') || isLikelyPineCode(blockText))) {
+                        code = blockText;
                     }
-                }
-                // Fallback: scan all unlabeled code blocks for a calculate function
-                if (!previewCode) {
-                    const allBlocks = [...content.text.matchAll(/```\w*\s*\n([\s\S]*?)```/g)];
-                    for (const block of allBlocks) {
-                        const blockText = block[1].trim();
-                        if (blockText.includes('function calculate') || blockText.includes('const calculate')) {
-                            previewCode = blockText;
-                            break;
-                        }
+                    if (!previewCode && (isJavaScriptBlock(lang) || isLikelyPreviewCode(blockText))) {
+                        previewCode = blockText;
                     }
                 }
             }
 
             if (content.type === 'output_file') {
-                if (content.fileName?.endsWith('.pine')) {
-                    fileUrl = content.fileUrl ?? null;
-                    // If we haven't found code yet, maybe we can fetch this later (handled in +server.ts)
+                const fileName = content.fileName?.toLowerCase() ?? '';
+                const fileUrl = content.fileUrl ?? null;
+                if (!fileUrl) continue;
+
+                if (!pineFileUrl && fileName.endsWith('.pine')) {
+                    pineFileUrl = fileUrl;
+                }
+                if (!previewFileUrl && (fileName.endsWith('.js') || fileName.endsWith('.ts'))) {
+                    previewFileUrl = fileUrl;
                 }
             }
         }
     }
 
-    return { code, previewCode, fileUrl, textOutput };
+    return { code, previewCode, pineFileUrl, previewFileUrl, textOutput };
+}
+
+function isJavaScriptBlock(lang: string): boolean {
+    return lang === 'javascript' || lang === 'js' || lang === 'typescript' || lang === 'ts';
+}
+
+function isLikelyPineCode(code: string): boolean {
+    return /@version\s*=\s*[56]/.test(code)
+        || /\bindicator\s*\(/.test(code)
+        || /\bstrategy\s*\(/.test(code)
+        || /\bta\./.test(code);
+}
+
+function isLikelyPreviewCode(code: string): boolean {
+    return /function\s+calculate\s*\(/.test(code)
+        || /const\s+calculate\s*=/.test(code)
+        || /module\.exports\s*=/.test(code);
 }
 
 /**

@@ -395,22 +395,37 @@ function calculate(data, params) {
 
     async function loadPreviewModule(jsCode: string) {
         try {
-            // Remove imports/exports if present (though we asked for none)
-            const cleanCode = jsCode
-                .replace(/^export\s+/gm, "")
-                .replace(/^import\s+.*;/gm, "");
+            const cleanCode = normalizePreviewJs(jsCode);
 
             // Create a function constructor
             const calculateFn = new Function(
                 "data",
                 "params",
                 `
+                const module = { exports: {} };
+                const exports = module.exports;
                 ${cleanCode}
-                // Fallback if calculate is not defined in scope but returned
-                if (typeof calculate !== 'function') {
+
+                const resolvedCalculate =
+                    typeof calculate === "function"
+                        ? calculate
+                        : typeof module.exports === "function"
+                          ? module.exports
+                          : typeof module.exports?.calculate === "function"
+                            ? module.exports.calculate
+                            : typeof exports?.calculate === "function"
+                              ? exports.calculate
+                              : null;
+
+                if (typeof resolvedCalculate !== "function") {
                     throw new Error("Function 'calculate' not found in preview code");
                 }
-                return calculate(data, params);
+
+                const output = resolvedCalculate(data, params);
+                if (!Array.isArray(output)) {
+                    throw new Error("Preview calculate() must return an array");
+                }
+                return output;
             `,
             );
 
@@ -420,6 +435,29 @@ function calculate(data, params) {
             testError = "Preview generation failed: " + (e as Error).message;
             return null;
         }
+    }
+
+    function normalizePreviewJs(rawCode: string): string {
+        return rawCode
+            .replace(/^```[a-zA-Z]*\s*\r?\n/, "")
+            .replace(/\r?\n```[\t ]*$/, "")
+            .replace(/^import\s+.*;?\s*$/gm, "")
+            .replace(
+                /^\s*export\s+default\s+function\s*\(/gm,
+                "const calculate = function(",
+            )
+            .replace(/^\s*export\s+default\s+/gm, "const calculate = ")
+            .replace(
+                /^\s*export\s+(?=(async\s+)?function|const|let|var)\s*/gm,
+                "",
+            )
+            .replace(
+                /^\s*module\.exports\s*=\s*function\s*\(/gm,
+                "const calculate = function(",
+            )
+            .replace(/^\s*module\.exports\s*=\s*calculate\s*;?\s*$/gm, "")
+            .replace(/^\s*exports\.calculate\s*=\s*calculate\s*;?\s*$/gm, "")
+            .trim();
     }
 
     async function tryLoadAndTest() {
