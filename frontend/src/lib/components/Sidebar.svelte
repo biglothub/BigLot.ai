@@ -13,11 +13,22 @@
     import { chatState } from "$lib/state/chat.svelte";
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
+    import { goto } from "$app/navigation";
 
     let { isOpen = $bindable(true) } = $props();
 
     function toggleSidebar() {
         isOpen = !isOpen;
+    }
+
+    function handleNewChatClick() {
+        void chatState.newChat();
+        void goto("/");
+    }
+
+    function handleChatHistoryClick(chatId: string) {
+        void chatState.loadChat(chatId);
+        void goto("/");
     }
 
     onMount(() => {
@@ -37,7 +48,7 @@
         class="p-4 flex items-center justify-between border-b border-border/50"
     >
         <button
-            onclick={() => chatState.newChat()}
+            onclick={handleNewChatClick}
             class="flex items-center gap-2 font-bold text-xl tracking-tight text-primary hover:opacity-80 transition-opacity"
         >
             {#if isOpen}
@@ -58,7 +69,7 @@
     <!-- New Chat Button -->
     <div class="p-3 space-y-1.5">
         <button
-            onclick={() => chatState.newChat()}
+            onclick={handleNewChatClick}
             class="w-full flex items-center gap-2 px-4 py-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-all duration-200 group"
         >
             <Plus
@@ -97,7 +108,7 @@
 
             {#each chatState.allChats as chat}
                 <div
-                    onclick={() => chatState.loadChat(chat.id)}
+                    onclick={() => handleChatHistoryClick(chat.id)}
                     class="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-md transition-colors text-left group relative pr-8 cursor-pointer
                     {chatState.currentChatId === chat.id
                         ? 'bg-primary/20 text-primary'
@@ -105,7 +116,8 @@
                     role="button"
                     tabindex="0"
                     onkeydown={(e) =>
-                        e.key === "Enter" && chatState.loadChat(chat.id)}
+                        e.key === "Enter" &&
+                        handleChatHistoryClick(chat.id)}
                 >
                     <MessageSquare
                         size={16}
