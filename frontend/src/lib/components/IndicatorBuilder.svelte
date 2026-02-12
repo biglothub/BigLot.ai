@@ -661,11 +661,6 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`);
 
     <!-- Header -->
     <div class="flex items-center gap-3 px-6 py-4 border-b border-border/50">
-        <div
-            class="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20"
-        >
-            <Sparkles size={22} class="text-primary" />
-        </div>
         <div class="flex-1">
             <h1
                 class="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-white"
