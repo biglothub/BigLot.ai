@@ -36,7 +36,7 @@ class ChatState {
         this.currentChatId = chatId;
         const { data, error } = await supabase
             .from('messages')
-            .select('role, content')
+            .select('role, content, image_url')
             .eq('chat_id', chatId)
             .order('created_at', { ascending: true });
 
@@ -138,7 +138,13 @@ class ChatState {
 
         } catch (error) {
             console.error(error);
-            this.messages.push({ role: 'assistant', content: "Sorry, I encountered an error." });
+            // If we already created an assistant placeholder, update it; otherwise add a new message.
+            const last = this.messages[this.messages.length - 1];
+            if (last?.role === 'assistant' && last.content === '') {
+                last.content = "Sorry, I encountered an error.";
+            } else {
+                this.messages.push({ role: 'assistant', content: "Sorry, I encountered an error." });
+            }
         } finally {
             this.isLoading = false;
         }

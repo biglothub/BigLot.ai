@@ -70,6 +70,7 @@ CREATE TABLE messages (
   chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
