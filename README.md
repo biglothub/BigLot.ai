@@ -76,6 +76,21 @@ CREATE TABLE messages (
 -- Disable RLS for development (Enable with policies for production)
 ALTER TABLE chats DISABLE ROW LEVEL SECURITY;
 ALTER TABLE messages DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE custom_indicators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  code TEXT NOT NULL,
+  config JSONB NOT NULL,
+  manus_task_id TEXT,
+  version INTEGER DEFAULT 1,
+  is_active BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;
 ```
 
 ## Contributing 🤝

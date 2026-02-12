@@ -7,6 +7,8 @@
         Trash2,
         PanelLeftClose,
         PanelLeftOpen,
+        BarChart3,
+        Sparkles,
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import { fade } from "svelte/transition";
@@ -54,7 +56,7 @@
     </div>
 
     <!-- New Chat Button -->
-    <div class="p-3">
+    <div class="p-3 space-y-1.5">
         <button
             onclick={() => chatState.newChat()}
             class="w-full flex items-center gap-2 px-4 py-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-all duration-200 group"
@@ -65,6 +67,21 @@
             />
             <span class="font-semibold text-sm">New Chat</span>
         </button>
+
+        <a
+            href="/indicators"
+            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500/10 to-primary/10 hover:from-purple-500/20 hover:to-primary/20 text-foreground/80 hover:text-primary border border-white/5 hover:border-primary/20 rounded-lg transition-all duration-200 group"
+        >
+            <Sparkles
+                size={18}
+                class="text-purple-400 group-hover:text-primary transition-colors"
+            />
+            <span class="font-semibold text-sm">Indicator Builder</span>
+            <span
+                class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary font-bold"
+                >AI</span
+            >
+        </a>
     </div>
 
     <!-- Chat History List -->
