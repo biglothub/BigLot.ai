@@ -57,6 +57,23 @@
     class="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
 >
     <div class="max-w-3xl mx-auto space-y-8 pb-32">
+        {#if chatState.messages.length === 0}
+            <div class="glass-panel p-6 text-center">
+                <div class="text-sm font-semibold text-foreground/80">
+                    No messages in this chat
+                </div>
+                {#if chatState.lastDbError}
+                    <div class="mt-2 text-xs text-muted-foreground">
+                        Database error: {chatState.lastDbError}
+                    </div>
+                {:else}
+                    <div class="mt-2 text-xs text-muted-foreground">
+                        If you expected older messages here, your `messages` table may be empty or message inserts failed earlier.
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
         {#each chatState.messages as message, i}
             <div
                 class="flex flex-col gap-4 {message.role === 'user'

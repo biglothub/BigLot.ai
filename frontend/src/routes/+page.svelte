@@ -39,7 +39,7 @@
                         )}
                     title="Assistant mode"
                 >
-                    <option value="coach">Coach (MM + Psych)</option>
+                    <option value="coach">Coach</option>
                     <option value="analyst">Market Analyst</option>
                     <option value="pinescript">PineScript Engineer</option>
                 </select>
@@ -54,7 +54,7 @@
             </div>
         </header>
 
-        {#if chatState.messages.length === 0}
+        {#if chatState.currentChatId === null && chatState.messages.length === 0}
             <!-- Empty State / Home Page -->
             <div
                 class="flex-1 flex flex-col items-center justify-center p-4"

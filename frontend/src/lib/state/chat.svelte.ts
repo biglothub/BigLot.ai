@@ -21,6 +21,7 @@ class ChatState {
     isLoading = $state(false);
     selectedImage = $state<string | null>(null);
     agentMode = $state<AgentMode>('coach');
+    lastDbError = $state<string | null>(null);
 
     private static readonly AGENT_MODE_STORAGE_KEY = 'biglot.agentMode';
 
@@ -41,27 +42,81 @@ class ChatState {
 
     // Load list of chats for sidebar
     async loadAllChats() {
-        const { data, error } = await supabase
+        let data: any[] | null = null;
+        let error: any = null;
+
+        ({ data, error } = await supabase
             .from('chats')
             .select('*')
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false }));
 
-        if (!error && data) {
+        if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
+            ({ data, error } = await supabase
+                .from('chats')
+                .select('*'));
+        }
+
+        if (error) {
+            console.error('Error loading chats:', error);
+            this.lastDbError = error.message ?? 'Failed to load chats';
+            return;
+        }
+
+        if (data) {
             this.allChats = data;
+            this.lastDbError = null;
         }
     }
 
     // Load messages for a specific chat
     async loadChat(chatId: string) {
-        this.currentChatId = chatId;
-        const { data, error } = await supabase
-            .from('messages')
-            .select('role, content, image_url')
-            .eq('chat_id', chatId)
-            .order('created_at', { ascending: true });
+        this.isLoading = true;
+        this.lastDbError = null;
 
-        if (!error && data) {
-            this.messages = data as Message[];
+        try {
+            // Prefer loading image_url when the column exists, but be backward compatible
+            // with older schemas where image_url may not have been added yet.
+            let data: any[] | null = null;
+            let error: any = null;
+
+            ({ data, error } = await supabase
+                .from('messages')
+                .select('role, content, image_url')
+                .eq('chat_id', chatId)
+                .order('created_at', { ascending: true }));
+
+            if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
+                ({ data, error } = await supabase
+                    .from('messages')
+                    .select('role, content, image_url')
+                    .eq('chat_id', chatId));
+            }
+
+            if (error && typeof error.message === 'string' && error.message.includes('image_url')) {
+                ({ data, error } = await supabase
+                    .from('messages')
+                    .select('role, content')
+                    .eq('chat_id', chatId)
+                    .order('created_at', { ascending: true }));
+            }
+
+            if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
+                ({ data, error } = await supabase
+                    .from('messages')
+                    .select('role, content')
+                    .eq('chat_id', chatId));
+            }
+
+            if (error) {
+                console.error('Error loading chat messages:', error);
+                this.lastDbError = error.message ?? 'Failed to load chat';
+                throw new Error(this.lastDbError ?? 'Failed to load chat');
+            }
+
+            this.currentChatId = chatId;
+            this.messages = (data ?? []) as Message[];
+        } finally {
+            this.isLoading = false;
         }
     }
 
@@ -114,12 +169,24 @@ class ChatState {
         this.messages.push(userMsg);
         this.selectedImage = null; // Clear after sending
 
-        await supabase.from('messages').insert({
-            chat_id: chatId,
-            role: 'user',
-            content: content,
-            image_url: imageUrl // Assuming column exists or will be added
-        });
+        // Persist user message (best-effort). Be backward compatible with schemas
+        // missing the image_url column.
+        {
+            const basePayload: any = { chat_id: chatId, role: 'user', content };
+            const payload = imageUrl ? { ...basePayload, image_url: imageUrl } : basePayload;
+            let { error } = await supabase.from('messages').insert(payload);
+
+            if (error && typeof error.message === 'string' && error.message.includes('image_url')) {
+                ({ error } = await supabase.from('messages').insert(basePayload));
+            }
+
+            if (error) {
+                console.error('Error saving user message:', error);
+                this.lastDbError = error.message ?? 'Failed to save message';
+            } else {
+                this.lastDbError = null;
+            }
+        }
 
         this.isLoading = true;
 
@@ -150,11 +217,19 @@ class ChatState {
             }
 
             // 3. Save assistant message after stream finishes
-            await supabase.from('messages').insert({
-                chat_id: chatId,
-                role: 'assistant',
-                content: fullAssistantContent
-            });
+            {
+                const { error } = await supabase.from('messages').insert({
+                    chat_id: chatId,
+                    role: 'assistant',
+                    content: fullAssistantContent
+                });
+                if (error) {
+                    console.error('Error saving assistant message:', error);
+                    this.lastDbError = error.message ?? 'Failed to save assistant message';
+                } else {
+                    this.lastDbError = null;
+                }
+            }
 
         } catch (error) {
             console.error(error);

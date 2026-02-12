@@ -26,9 +26,17 @@
         void goto("/");
     }
 
-    function handleChatHistoryClick(chatId: string) {
-        void chatState.loadChat(chatId);
-        void goto("/");
+    async function handleChatHistoryClick(chatId: string) {
+        try {
+            await chatState.loadChat(chatId);
+            await goto("/");
+        } catch (e: any) {
+            const msg =
+                typeof e?.message === "string"
+                    ? e.message
+                    : "Failed to load chat.";
+            alert(msg);
+        }
     }
 
     onMount(() => {

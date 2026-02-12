@@ -8,7 +8,7 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 - **Glassmorphism UI**: Modern, sleek interface with glassmorphism effects and smooth animations.
 - **Real-time Streaming**: Chat responses stream in real-time for a responsive experience.
 - **Markdown Support**: Beautifully renders code blocks, tables, lists, and formatted text.
-- **Agent Modes**: Switch between **Coach (MM + Psychology)**, **Market Analyst**, and **PineScript Engineer** modes inside chat.
+- **Agent Modes**: Switch between **Coach**, **Market Analyst**, and **PineScript Engineer** modes inside chat.
 - **Chat History**: Persistent chat history with **Supabase** backend integration.
 - **Session Management**: Automatically creates new sessions; supports deleting old chats.
 - **Copy & Feedback**: Easy-to-use copy buttons with visual feedback and message rating actions.
