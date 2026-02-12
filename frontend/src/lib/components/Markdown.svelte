@@ -16,5 +16,11 @@
 </div>
 
 <style>
-    /* Local overrides if needed, but mainly relying on global .prose-gold */
+    .markdown-body :global(code) {
+        white-space: pre-wrap;
+    }
+
+    .markdown-body :global(pre code) {
+        white-space: pre;
+    }
 </style>

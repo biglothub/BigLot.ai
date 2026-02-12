@@ -6,6 +6,7 @@ export type Message = {
     role: 'user' | 'assistant' | 'system';
     content: string;
     image_url?: string;
+    mode?: AgentMode;
 };
 
 export type Chat = {
@@ -74,36 +75,19 @@ class ChatState {
         this.lastDbError = null;
 
         try {
-            // Prefer loading image_url when the column exists, but be backward compatible
-            // with older schemas where image_url may not have been added yet.
             let data: any[] | null = null;
             let error: any = null;
 
             ({ data, error } = await supabase
                 .from('messages')
-                .select('role, content, image_url')
+                .select('*')
                 .eq('chat_id', chatId)
                 .order('created_at', { ascending: true }));
 
             if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
                 ({ data, error } = await supabase
                     .from('messages')
-                    .select('role, content, image_url')
-                    .eq('chat_id', chatId));
-            }
-
-            if (error && typeof error.message === 'string' && error.message.includes('image_url')) {
-                ({ data, error } = await supabase
-                    .from('messages')
-                    .select('role, content')
-                    .eq('chat_id', chatId)
-                    .order('created_at', { ascending: true }));
-            }
-
-            if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
-                ({ data, error } = await supabase
-                    .from('messages')
-                    .select('role, content')
+                    .select('*')
                     .eq('chat_id', chatId));
             }
 
@@ -114,7 +98,14 @@ class ChatState {
             }
 
             this.currentChatId = chatId;
-            this.messages = (data ?? []) as Message[];
+            this.messages = (data ?? []).map((row: any) => ({
+                role: row.role,
+                content: row.content ?? '',
+                image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
+                mode: row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript'
+                    ? row.mode
+                    : undefined
+            })) as Message[];
         } finally {
             this.isLoading = false;
         }
@@ -144,6 +135,7 @@ class ChatState {
 
     async sendMessage(content: string, imageUrl?: string) {
         if (!content.trim() && !imageUrl) return;
+        const modeUsed = this.agentMode;
 
         // 1. Create chat session in Supabase if it doesn't exist
         if (!this.currentChatId) {
@@ -165,18 +157,26 @@ class ChatState {
         const chatId = this.currentChatId;
 
         // 2. Add and Save user message
-        const userMsg: Message = { role: 'user', content, image_url: imageUrl };
+        const userMsg: Message = { role: 'user', content, image_url: imageUrl, mode: modeUsed };
         this.messages.push(userMsg);
         this.selectedImage = null; // Clear after sending
 
         // Persist user message (best-effort). Be backward compatible with schemas
-        // missing the image_url column.
+        // missing newer columns (image_url, mode).
         {
             const basePayload: any = { chat_id: chatId, role: 'user', content };
-            const payload = imageUrl ? { ...basePayload, image_url: imageUrl } : basePayload;
+            const withImage = imageUrl ? { ...basePayload, image_url: imageUrl } : basePayload;
+            const payload = { ...withImage, mode: modeUsed };
+
             let { error } = await supabase.from('messages').insert(payload);
 
-            if (error && typeof error.message === 'string' && error.message.includes('image_url')) {
+            if (error && typeof error.message === 'string' && /image_url/i.test(error.message)) {
+                ({ error } = await supabase.from('messages').insert({ ...basePayload, mode: modeUsed }));
+            }
+            if (error && typeof error.message === 'string' && /\bmode\b/i.test(error.message)) {
+                ({ error } = await supabase.from('messages').insert(withImage));
+            }
+            if (error && typeof error.message === 'string' && (/image_url/i.test(error.message) || /\bmode\b/i.test(error.message))) {
                 ({ error } = await supabase.from('messages').insert(basePayload));
             }
 
@@ -202,7 +202,7 @@ class ChatState {
             const reader = response.body?.getReader();
             if (!reader) throw new Error('No reader');
 
-            this.messages.push({ role: 'assistant', content: '' });
+            this.messages.push({ role: 'assistant', content: '', mode: modeUsed });
             const currentMessageIndex = this.messages.length - 1;
 
             const decoder = new TextDecoder();
@@ -221,11 +221,27 @@ class ChatState {
                 const { error } = await supabase.from('messages').insert({
                     chat_id: chatId,
                     role: 'assistant',
-                    content: fullAssistantContent
+                    content: fullAssistantContent,
+                    mode: modeUsed
                 });
                 if (error) {
-                    console.error('Error saving assistant message:', error);
-                    this.lastDbError = error.message ?? 'Failed to save assistant message';
+                    // Retry without mode if column doesn't exist
+                    if (typeof error.message === 'string' && /\bmode\b/i.test(error.message)) {
+                        const retry = await supabase.from('messages').insert({
+                            chat_id: chatId,
+                            role: 'assistant',
+                            content: fullAssistantContent
+                        });
+                        if (retry.error) {
+                            console.error('Error saving assistant message:', retry.error);
+                            this.lastDbError = retry.error.message ?? 'Failed to save assistant message';
+                        } else {
+                            this.lastDbError = null;
+                        }
+                    } else {
+                        console.error('Error saving assistant message:', error);
+                        this.lastDbError = error.message ?? 'Failed to save assistant message';
+                    }
                 } else {
                     this.lastDbError = null;
                 }

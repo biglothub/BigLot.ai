@@ -13,6 +13,12 @@
     import Markdown from "./Markdown.svelte";
 
     let copiedIndex = $state<number | null>(null);
+    const modeLabel: Record<string, string> = {
+        coach: "Coach",
+        recovery: "Recovery",
+        analyst: "Market Analyst",
+        pinescript: "PineScript Engineer",
+    };
 
     let scroller: HTMLDivElement | null = $state(null);
     let stickToBottom = $state(true);
@@ -185,6 +191,12 @@
                                     </button>
                                 {/if}
                             </div>
+
+                            {#if message.role === "assistant" && message.mode}
+                                <div class="text-[11px] text-muted-foreground/70 px-1">
+                                    mode: {modeLabel[message.mode] ?? message.mode}
+                                </div>
+                            {/if}
                         {/if}
                     </div>
                 </div>
