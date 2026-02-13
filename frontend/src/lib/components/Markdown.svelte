@@ -1,6 +1,6 @@
 <script lang="ts">
     import { marked } from "marked";
-    import DOMPurify from "isomorphic-dompurify";
+    import sanitizeHtml from "sanitize-html";
 
     export let content = "";
 
@@ -8,7 +8,7 @@
     // marked.setOptions({ ... });
 
     // marked + {@html} is an XSS footgun if you don't sanitize.
-    $: html = DOMPurify.sanitize(marked.parse(content || "") as string);
+    $: html = sanitizeHtml(marked.parse(content || "") as string);
 </script>
 
 <div class="prose-gold markdown-body">
