@@ -3,7 +3,7 @@
  */
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { generateIndicator, type GPTModel } from '$lib/aiEngine';
+import { generateIndicator, type GPTModel } from '$lib/server/aiEngine.server';
 
 export const POST: RequestHandler = async ({ request }) => {
     const { prompt, model } = await request.json();
