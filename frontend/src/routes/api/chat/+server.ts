@@ -1,8 +1,8 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import OpenAI from 'openai';
 import { env } from '$env/dynamic/private';
 import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
+import { getClientForModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
 
 type IncomingMessage = {
     role: 'user' | 'assistant' | 'system';
@@ -46,26 +46,31 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Debug-only helper to validate mode switching without calling OpenAI.
     // Set `BIGLOT_CHAT_ECHO_MODE=1` in server env to enable.
+    const selectedModel = resolveDefaultAIModel();
+
     if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
-        return new Response(`Mode: ${mode}\n`, {
+        return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
             headers: {
                 'Content-Type': 'text/plain; charset=utf-8',
                 'Cache-Control': 'no-cache',
-                'X-BigLot-Mode': mode
+                'X-BigLot-Mode': mode,
+                'X-BigLot-Model': selectedModel
             }
         });
     }
 
-    if (!env.OPENAI_API_KEY) {
+    const hasImageInput = safeMessages.some((m) => m.role === 'user' && !!m.image_url);
+    const { client, apiModel, provider, supportsImageInput } = getClientForModel(selectedModel);
+    if (hasImageInput && !supportsImageInput) {
         return json(
-            { error: 'OPENAI_API_KEY is not configured' },
-            { status: 500, headers: { 'X-BigLot-Mode': mode } }
+            {
+                error: `Model '${selectedModel}' does not support image input. Switch AI_MODEL to 'gpt-4o' or 'gpt-4o-mini'.`
+            },
+            { status: 400, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
         );
     }
 
-    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-
-    // Create formatted messages for OpenAI
+    // Create formatted messages for the active model provider
     const formattedMessages = [
         { 
             role: "system", 
@@ -88,13 +93,16 @@ export const POST: RequestHandler = async ({ request }) => {
 
     let stream;
     try {
-        stream = await openai.chat.completions.create({
-            model: 'gpt-4o',
+        stream = await client.chat.completions.create({
+            model: apiModel,
             messages: formattedMessages as any,
             stream: true,
         });
     } catch (e: any) {
-        return json({ error: e?.message || 'Failed to call OpenAI' }, { status: 502 });
+        return json(
+            { error: e?.message || `Failed to call ${provider}` },
+            { status: 502, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
+        );
     }
 
     const encoder = new TextEncoder();
@@ -118,7 +126,8 @@ export const POST: RequestHandler = async ({ request }) => {
             // We stream plain text chunks; this is not an SSE stream.
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-cache',
-            'X-BigLot-Mode': mode
+            'X-BigLot-Mode': mode,
+            'X-BigLot-Model': selectedModel
         }
     });
 };

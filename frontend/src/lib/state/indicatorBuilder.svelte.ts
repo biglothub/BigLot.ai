@@ -1,13 +1,12 @@
 /**
  * Indicator Builder State Management
- * Manages the lifecycle of indicator generation via OpenAI GPT
+ * Manages the lifecycle of indicator generation via shared AI model
  */
 import type {
     IndicatorGenerationProgress,
     IndicatorActivityLog,
     CustomIndicator,
-    IndicatorConfig,
-    GPTModelOption
+    IndicatorConfig
 } from '$lib/types/indicator';
 import { supabase } from '$lib/supabase';
 
@@ -21,14 +20,13 @@ class IndicatorBuilderState {
 
     // UI state
     isBuilderOpen = $state(false);
-    selectedModel = $state<GPTModelOption>('gpt-4o');
 
     // Reference tracking
     referenceUsed = $state<string | null>(null);
 
     /**
      * Generate a new indicator from a prompt
-     * Uses OpenAI GPT — synchronous, no polling needed
+     * Uses server-side AI engine — synchronous, no polling needed
      */
     async generateFromPrompt(prompt: string) {
         this.progress = {
@@ -51,8 +49,7 @@ class IndicatorBuilderState {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    prompt,
-                    model: this.selectedModel
+                    prompt
                 })
             });
 

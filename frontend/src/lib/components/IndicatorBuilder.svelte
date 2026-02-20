@@ -30,7 +30,6 @@
     import type {
         IndicatorActivityLog,
         IndicatorValue,
-        GPTModelOption,
         OHLCV,
     } from "$lib/types/indicator";
 
@@ -116,32 +115,6 @@
             return () => clearTimeout(timeout);
         }
     });
-
-    const profiles: {
-        value: GPTModelOption;
-        label: string;
-        desc: string;
-        icon: string;
-    }[] = [
-        {
-            value: "gpt-4o-mini",
-            label: "Quick",
-            desc: "Fast & simple",
-            icon: "⚡",
-        },
-        {
-            value: "gpt-4o",
-            label: "Standard",
-            desc: "Best quality",
-            icon: "🔄",
-        },
-        {
-            value: "o3-mini",
-            label: "Reasoning",
-            desc: "Complex logic",
-            icon: "🧠",
-        },
-    ];
 
     const progress = $derived(indicatorBuilder.progress);
     const isGenerating = $derived(

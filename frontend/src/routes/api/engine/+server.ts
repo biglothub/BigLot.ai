@@ -3,19 +3,17 @@
  */
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { generateIndicator, type GPTModel } from '$lib/server/aiEngine.server';
+import { generateIndicator } from '$lib/server/aiEngine.server';
 
 export const POST: RequestHandler = async ({ request }) => {
-    const { prompt, model } = await request.json();
+    const { prompt } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
         return json({ error: 'Prompt is required' }, { status: 400 });
     }
 
     try {
-        const result = await generateIndicator(prompt, {
-            model: (model as GPTModel) ?? 'gpt-4o'
-        });
+        const result = await generateIndicator(prompt);
 
         // Post-process PineScript
         let finalCode = result.code;

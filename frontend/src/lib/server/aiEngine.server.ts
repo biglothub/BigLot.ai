@@ -4,18 +4,11 @@
  * 
  * Uses advanced AI logic for synchronous indicator generation.
  */
-import { env } from '$env/dynamic/private';
 import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt } from '$lib/pinescriptLibrary';
-import OpenAI from 'openai';
-
-function getOpenAI(): OpenAI {
-  const key = env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY is not configured in .env');
-  return new OpenAI({ apiKey: key });
-}
+import { getClientForModel, resolveDefaultAIModel, type AIModel } from '$lib/server/aiProvider.server';
 
 // ─── GPT Model Options ───
-export type GPTModel = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini';
+export type GPTModel = AIModel;
 
 // ─── DUAL-MODE SYSTEM PROMPT ───
 const INDICATOR_SYSTEM_INSTRUCTION = `You are the World-Class Trading Indicator Engineer for BigLot.ai, specializing in high-performance, error-free TradingView PineScript v6.
@@ -97,7 +90,7 @@ export type GenerateIndicatorResult = {
 };
 
 /**
- * Generate an indicator from a user prompt using OpenAI GPT.
+ * Generate an indicator from a user prompt using OpenAI/DeepSeek.
  * Returns the result directly — no polling needed.
  */
 export async function generateIndicator(
@@ -106,8 +99,8 @@ export async function generateIndicator(
     model?: GPTModel;
   }
 ): Promise<GenerateIndicatorResult> {
-  const openai = getOpenAI();
-  const model = options?.model ?? 'gpt-4o';
+  const model = options?.model ?? resolveDefaultAIModel();
+  const { client, apiModel, provider } = getClientForModel(model);
 
   // ─── REFERENCE MATCHING ENGINE ───
   let finalPrompt: string;
@@ -128,11 +121,11 @@ export async function generateIndicator(
   }
 
   // ─── CALL GPT ───
-  console.log(`[BigLot.ai] Generating indicator with ${model}...`);
+  console.log(`[BigLot.ai] Generating indicator with ${model} (${provider})...`);
   const startTime = Date.now();
 
-  const completion = await openai.chat.completions.create({
-    model,
+  const completion = await client.chat.completions.create({
+    model: apiModel,
     messages: [
       { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
       { role: 'user', content: finalPrompt }

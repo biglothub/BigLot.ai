@@ -19,7 +19,7 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 - **Styling**: [TailwindCSS v4](https://tailwindcss.com/)
 - **Icons**: [Lucide Svelte](https://lucide.dev/guide/packages/lucide-svelte)
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
-- **AI Model**: OpenAI GPT-4o Integration
+- **AI Model**: OpenAI GPT + DeepSeek R1 support (shared model switch for chat + indicator)
 
 ## Getting Started 🚀
 
@@ -27,7 +27,8 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 
 - Node.js (v18+)
 - Supabase Account
-- OpenAI API Key
+- OpenAI API Key (for OpenAI models)
+- DeepSeek API Key (optional, required when `AI_MODEL=deepseek-r1`)
 
 ### Installation
 
@@ -46,11 +47,22 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
    Create a `.env` file in the `frontend` directory:
    ```env
    OPENAI_API_KEY=your_openai_key
+   DEEPSEEK_API_KEY=your_deepseek_key
+   AI_MODEL=gpt-4o
    PUBLIC_SUPABASE_URL=your_supabase_url
    PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
-4. Run the development server:
+   Supported values for `AI_MODEL`: `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `deepseek-r1`
+
+4. (Optional) Switch model from backend config:
+   ```bash
+   cd frontend
+   npm run switch -- deepseek-r1
+   ```
+   Then restart the dev server.
+
+5. Run the development server:
    ```bash
    npm run dev
    ```
