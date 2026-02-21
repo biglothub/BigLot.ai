@@ -39,7 +39,7 @@ export type CustomIndicator = {
 
 // ─── GPT Model Types ───
 
-export type GPTModelOption = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini' | 'deepseek-r1';
+export type GPTModelOption = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini' | 'deepseek' | 'deepseek-r1';
 
 // ─── AI Engine Types ───
 

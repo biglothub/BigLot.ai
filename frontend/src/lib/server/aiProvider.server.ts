@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { env } from '$env/dynamic/private';
 
 export type AIProvider = 'openai' | 'deepseek';
-export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini' | 'deepseek-r1';
+export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini' | 'deepseek' | 'deepseek-r1';
 
 type ModelConfig = {
     provider: AIProvider;
@@ -14,6 +14,8 @@ const MODEL_CONFIG: Record<AIModel, ModelConfig> = {
     'gpt-4o': { provider: 'openai', apiModel: 'gpt-4o', supportsImageInput: true },
     'gpt-4o-mini': { provider: 'openai', apiModel: 'gpt-4o-mini', supportsImageInput: true },
     'o3-mini': { provider: 'openai', apiModel: 'o3-mini', supportsImageInput: false },
+    // DeepSeek default chat model.
+    'deepseek': { provider: 'deepseek', apiModel: 'deepseek-chat', supportsImageInput: false },
     // DeepSeek API model name for R1 is `deepseek-reasoner`.
     'deepseek-r1': { provider: 'deepseek', apiModel: 'deepseek-reasoner', supportsImageInput: false }
 };
@@ -26,6 +28,7 @@ export function isAIModel(value: unknown): value is AIModel {
 
 export function resolveDefaultAIModel(): AIModel {
     const configured = env.AI_MODEL?.trim();
+    if (configured === 'deepseek-chat') return 'deepseek';
     if (configured && isAIModel(configured)) return configured;
     return 'gpt-4o';
 }
