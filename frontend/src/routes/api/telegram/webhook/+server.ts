@@ -7,6 +7,7 @@ import { getSystemPrompt } from '$lib/agent/systemPrompts';
 import {
     getTelegramWebhookSecret,
     hashLinkToken,
+    sendTelegramChatAction,
     sendTelegramMessage,
     toDisplayName,
     type TelegramLinkRecord
@@ -272,71 +273,104 @@ async function handleConversationMessage(message: TelegramMessage, sender: Teleg
         return;
     }
 
-    await insertMessageWithFallback({
-        chatId,
-        role: 'user',
-        content: incomingText,
-        mode: 'coach',
-        channel: 'telegram',
-        externalMessageId
-    });
+    const stopTyping = startTelegramTypingIndicator(message.chat.id);
 
-    const model = resolveDefaultAIModel();
-    const { client, apiModel, provider } = getClientForModel(model);
+    try {
+        await insertMessageWithFallback({
+            chatId,
+            role: 'user',
+            content: incomingText,
+            mode: 'coach',
+            channel: 'telegram',
+            externalMessageId
+        });
 
-    const { data: contextRows, error: contextError } = await supabase
-        .from('messages')
-        .select('role,content')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: false })
-        .limit(MAX_CONTEXT_MESSAGES);
+        const model = resolveDefaultAIModel();
+        const { client, apiModel, provider } = getClientForModel(model);
 
-    if (contextError) {
-        throw new Error(contextError.message);
-    }
+        const { data: contextRows, error: contextError } = await supabase
+            .from('messages')
+            .select('role,content')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: false })
+            .limit(MAX_CONTEXT_MESSAGES);
 
-    const orderedContext = [...(contextRows ?? [])].reverse();
-    const safeContext = orderedContext
-        .filter((row) => row && (row.role === 'user' || row.role === 'assistant' || row.role === 'system'))
-        .map((row) => {
-            const content = typeof row.content === 'string' ? row.content : '';
-            return { role: row.role as 'user' | 'assistant' | 'system', content: content.slice(0, 8000) };
-        })
-        .filter((row) => row.content.trim().length > 0);
-
-    const systemPrompt = getSystemPrompt('coach');
-
-    const completion = await client.chat.completions.create({
-        model: apiModel,
-        messages: [{ role: 'system', content: systemPrompt }, ...safeContext],
-        temperature: 0.5,
-        max_tokens: 1200
-    });
-
-    const assistantContentRaw = completion.choices[0]?.message?.content;
-    const assistantContent =
-        typeof assistantContentRaw === 'string' && assistantContentRaw.trim().length > 0
-            ? assistantContentRaw
-            : `(${provider}) didn't return a text response.`;
-
-    await insertMessageWithFallback({
-        chatId,
-        role: 'assistant',
-        content: assistantContent,
-        mode: 'coach',
-        channel: 'telegram'
-    });
-
-    const chunks = chunkTelegramText(assistantContent, MAX_TELEGRAM_RAW_CHARS);
-    for (const chunk of chunks) {
-        const pretty = formatTelegramOutput(chunk);
-        try {
-            await sendTelegramMessage(message.chat.id, pretty, { parseMode: 'HTML' });
-        } catch (error) {
-            console.error('[Telegram format fallback]', error);
-            await sendTelegramMessage(message.chat.id, chunk);
+        if (contextError) {
+            throw new Error(contextError.message);
         }
+
+        const orderedContext = [...(contextRows ?? [])].reverse();
+        const safeContext = orderedContext
+            .filter((row) => row && (row.role === 'user' || row.role === 'assistant' || row.role === 'system'))
+            .map((row) => {
+                const content = typeof row.content === 'string' ? row.content : '';
+                return { role: row.role as 'user' | 'assistant' | 'system', content: content.slice(0, 8000) };
+            })
+            .filter((row) => row.content.trim().length > 0);
+
+        const systemPrompt = getSystemPrompt('coach');
+
+        const completion = await client.chat.completions.create({
+            model: apiModel,
+            messages: [{ role: 'system', content: systemPrompt }, ...safeContext],
+            temperature: 0.5,
+            max_tokens: 1200
+        });
+
+        const assistantContentRaw = completion.choices[0]?.message?.content;
+        const assistantContent =
+            typeof assistantContentRaw === 'string' && assistantContentRaw.trim().length > 0
+                ? assistantContentRaw
+                : `(${provider}) didn't return a text response.`;
+
+        await insertMessageWithFallback({
+            chatId,
+            role: 'assistant',
+            content: assistantContent,
+            mode: 'coach',
+            channel: 'telegram'
+        });
+
+        const chunks = chunkTelegramText(assistantContent, MAX_TELEGRAM_RAW_CHARS);
+        for (const chunk of chunks) {
+            const pretty = formatTelegramOutput(chunk);
+            try {
+                await sendTelegramMessage(message.chat.id, pretty, { parseMode: 'HTML' });
+            } catch (error) {
+                console.error('[Telegram format fallback]', error);
+                await sendTelegramMessage(message.chat.id, chunk);
+            }
+        }
+    } finally {
+        stopTyping();
     }
+}
+
+function startTelegramTypingIndicator(chatId: number): () => void {
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const sendTyping = async () => {
+        if (stopped) return;
+        try {
+            await sendTelegramChatAction(chatId, 'typing');
+        } catch (error) {
+            console.warn('[Telegram typing indicator warning]', error);
+        }
+    };
+
+    void sendTyping();
+    timer = setInterval(() => {
+        void sendTyping();
+    }, 4000);
+
+    return () => {
+        stopped = true;
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+    };
 }
 
 async function getOrCreateTelegramChat(link: TelegramLinkRecord, externalChatId: number): Promise<string> {

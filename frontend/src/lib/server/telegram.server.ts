@@ -21,6 +21,8 @@ type TelegramSendOptions = {
     disableWebPagePreview?: boolean;
 };
 
+export type TelegramChatAction = 'typing';
+
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
 
 export function isValidBigLotUserId(value: unknown): value is string {
@@ -69,6 +71,23 @@ export async function sendTelegramMessage(chatId: number, text: string, options:
     if (!response.ok) {
         const raw = await response.text();
         throw new Error(`Telegram sendMessage failed (${response.status}): ${raw}`);
+    }
+}
+
+export async function sendTelegramChatAction(chatId: number, action: TelegramChatAction = 'typing'): Promise<void> {
+    const token = getTelegramBotToken();
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: chatId,
+            action
+        })
+    });
+
+    if (!response.ok) {
+        const raw = await response.text();
+        throw new Error(`Telegram sendChatAction failed (${response.status}): ${raw}`);
     }
 }
 
