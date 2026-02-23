@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { getSupabaseAdminClient } from '$lib/server/supabaseAdmin.server';
 import { getClientForModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
 import { getSystemPrompt } from '$lib/agent/systemPrompts';
@@ -54,6 +55,8 @@ type ChatRecord = {
 const MAX_TELEGRAM_CHARS = 3800;
 const MAX_CONTEXT_MESSAGES = 30;
 const MAX_TELEGRAM_RAW_CHARS = 3000;
+const DEFAULT_TELEGRAM_RATE_LIMIT_PER_MINUTE = 15;
+const TELEGRAM_RATE_LIMIT_PER_MINUTE = parsePositiveInt(env.TELEGRAM_RATE_LIMIT_PER_MINUTE, DEFAULT_TELEGRAM_RATE_LIMIT_PER_MINUTE);
 
 export const GET: RequestHandler = async () => {
     return json({ ok: true });
@@ -61,6 +64,11 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
     const expectedSecret = getTelegramWebhookSecret();
+    const requireSecret = isWebhookSecretRequired();
+    if (requireSecret && !expectedSecret) {
+        return json({ error: 'TELEGRAM_WEBHOOK_SECRET must be configured in production' }, { status: 500 });
+    }
+
     if (expectedSecret) {
         const actualSecret = request.headers.get('x-telegram-bot-api-secret-token');
         if (actualSecret !== expectedSecret) {
@@ -75,12 +83,23 @@ export const POST: RequestHandler = async ({ request }) => {
         return json({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
+    if (typeof update.update_id !== 'number') {
+        return json({ ok: true, ignored: true, reason: 'Missing update_id' });
+    }
+
+    const acceptedUpdate = await registerWebhookUpdate(update.update_id);
+    if (!acceptedUpdate) {
+        return json({ ok: true, duplicate: true });
+    }
+
     const message = update.message;
     if (!message?.chat?.id || !message.from?.id) {
+        await markWebhookUpdateStatus(update.update_id, 'ignored');
         return json({ ok: true, ignored: true, reason: 'No message payload' });
     }
 
     if (message.chat.type !== 'private') {
+        await markWebhookUpdateStatus(update.update_id, 'ignored');
         return json({ ok: true, ignored: true, reason: 'Only private chat is supported' });
     }
 
@@ -90,13 +109,32 @@ export const POST: RequestHandler = async ({ request }) => {
     try {
         if (incomingText.startsWith('/start')) {
             await handleStartCommand(message, sender, incomingText);
+            await markWebhookUpdateStatus(update.update_id, 'processed');
             return json({ ok: true, action: 'link' });
         }
 
+        if (isCommand(incomingText, 'unlink')) {
+            await handleUnlinkCommand(message, sender);
+            await markWebhookUpdateStatus(update.update_id, 'processed');
+            return json({ ok: true, action: 'unlink' });
+        }
+
+        if (isCommand(incomingText, 'help')) {
+            await sendTelegramMessage(
+                message.chat.id,
+                'BigLot.ai Telegram commands:\n/start <token> - link account\n/unlink - disconnect Telegram account\n/help - show commands'
+            );
+            await markWebhookUpdateStatus(update.update_id, 'processed');
+            return json({ ok: true, action: 'help' });
+        }
+
         await handleConversationMessage(message, sender, incomingText);
+        await markWebhookUpdateStatus(update.update_id, 'processed');
         return json({ ok: true, action: 'chat' });
     } catch (error) {
         console.error('[Telegram Webhook Error]', error);
+        const messageText = error instanceof Error ? error.message : 'Unknown webhook error';
+        await markWebhookUpdateStatus(update.update_id, 'failed', messageText);
         try {
             await sendTelegramMessage(message.chat.id, 'BigLot.ai มีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้งในอีกสักครู่');
         } catch (sendError) {
@@ -217,14 +255,30 @@ async function handleConversationMessage(message: TelegramMessage, sender: Teleg
         return;
     }
 
+    const isRateLimited = await isTelegramUserRateLimited(link.biglot_user_id);
+    if (isRateLimited) {
+        await sendTelegramMessage(
+            message.chat.id,
+            `ตอนนี้ส่งข้อความเร็วเกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (limit ${TELEGRAM_RATE_LIMIT_PER_MINUTE} msg/min)`
+        );
+        return;
+    }
+
     const chatId = await getOrCreateTelegramChat(link, message.chat.id);
+    const externalMessageId = String(message.message_id);
+
+    const alreadyHandled = await hasHandledTelegramMessage(chatId, externalMessageId);
+    if (alreadyHandled) {
+        return;
+    }
+
     await insertMessageWithFallback({
         chatId,
         role: 'user',
         content: incomingText,
         mode: 'coach',
         channel: 'telegram',
-        externalMessageId: String(message.message_id)
+        externalMessageId
     });
 
     const model = resolveDefaultAIModel();
@@ -376,6 +430,10 @@ async function insertMessageWithFallback(input: {
 
         const errorMessage = error.message ?? 'Unknown insert error';
 
+        if (isDuplicateExternalMessageError(errorMessage)) {
+            return;
+        }
+
         if (/external_message_id/i.test(errorMessage)) {
             delete payload.external_message_id;
             continue;
@@ -395,12 +453,158 @@ async function insertMessageWithFallback(input: {
     throw new Error('Failed to persist message with fallback retries');
 }
 
+async function handleUnlinkCommand(message: TelegramMessage, sender: TelegramUser): Promise<void> {
+    const supabase = getSupabaseAdminClient();
+    const nowIso = new Date().toISOString();
+
+    const { error } = await supabase
+        .from('telegram_links')
+        .update({
+            is_active: false,
+            unlinked_at: nowIso,
+            updated_at: nowIso
+        })
+        .eq('telegram_user_id', sender.id)
+        .eq('is_active', true);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    await sendTelegramMessage(
+        message.chat.id,
+        'ยกเลิกการเชื่อมบัญชีเรียบร้อยแล้ว\n\nหากต้องการเชื่อมใหม่ ให้กด Add Telegram Bot จากหน้าเว็บ BigLot.ai'
+    );
+}
+
+async function hasHandledTelegramMessage(chatId: string, externalMessageId: string): Promise<boolean> {
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('chat_id', chatId)
+        .eq('channel', 'telegram')
+        .eq('external_message_id', externalMessageId)
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        if (/\bchannel\b/i.test(error.message) || /external_message_id/i.test(error.message)) {
+            return false;
+        }
+        throw new Error(error.message);
+    }
+
+    return !!data;
+}
+
+async function isTelegramUserRateLimited(biglotUserId: string): Promise<boolean> {
+    const supabase = getSupabaseAdminClient();
+    const windowStart = new Date(Date.now() - 60_000).toISOString();
+    const telegramChatIds = await getTelegramChatIds(biglotUserId);
+    if (telegramChatIds.length === 0) return false;
+
+    const { count, error } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'user')
+        .eq('channel', 'telegram')
+        .gte('created_at', windowStart)
+        .in('chat_id', telegramChatIds);
+
+    if (error) {
+        if (/\bchannel\b/i.test(error.message)) return false;
+        throw new Error(error.message);
+    }
+
+    return (count ?? 0) >= TELEGRAM_RATE_LIMIT_PER_MINUTE;
+}
+
+async function getTelegramChatIds(biglotUserId: string): Promise<string[]> {
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase
+        .from('chat_channels')
+        .select('chat_id')
+        .eq('biglot_user_id', biglotUserId)
+        .eq('channel', 'telegram');
+
+    if (error) {
+        if (/chat_channels/i.test(error.message)) return [];
+        throw new Error(error.message);
+    }
+
+    return (data ?? [])
+        .map((row) => row.chat_id)
+        .filter((chatId): chatId is string => typeof chatId === 'string' && chatId.length > 0);
+}
+
+async function registerWebhookUpdate(updateId: number): Promise<boolean> {
+    const supabase = getSupabaseAdminClient();
+    const { error } = await supabase.from('telegram_webhook_events').insert({
+        update_id: updateId,
+        status: 'processing'
+    });
+
+    if (!error) return true;
+
+    const message = error.message ?? '';
+    if (error.code === '23505' || /duplicate key/i.test(message)) {
+        return false;
+    }
+    if (/telegram_webhook_events/i.test(message)) {
+        // Backward compatibility if table wasn't migrated yet.
+        return true;
+    }
+
+    throw new Error(message || 'Failed to register webhook update');
+}
+
+async function markWebhookUpdateStatus(updateId: number, status: 'processed' | 'failed' | 'ignored', errorText?: string): Promise<void> {
+    const supabase = getSupabaseAdminClient();
+    const { error } = await supabase
+        .from('telegram_webhook_events')
+        .update({
+            status,
+            error: errorText ?? null,
+            processed_at: new Date().toISOString()
+        })
+        .eq('update_id', updateId);
+
+    if (!error) return;
+    if (/telegram_webhook_events/i.test(error.message ?? '')) return;
+    console.warn('[Telegram webhook status update warning]', error.message ?? 'Failed to update webhook status');
+}
+
 function parseStartToken(text: string): string | null {
     const parts = text.trim().split(/\s+/);
     if (parts.length < 2) return null;
     const token = parts[1]?.trim();
     if (!token) return null;
     return token;
+}
+
+function isCommand(text: string, commandName: string): boolean {
+    const command = text.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+    if (!command.startsWith('/')) return false;
+    const commandWithoutSlash = command.slice(1);
+    const commandBase = commandWithoutSlash.split('@')[0] ?? commandWithoutSlash;
+    return commandBase === commandName.toLowerCase();
+}
+
+function isWebhookSecretRequired(): boolean {
+    return env.NODE_ENV === 'production' || env.TELEGRAM_REQUIRE_WEBHOOK_SECRET === '1';
+}
+
+function parsePositiveInt(rawValue: string | undefined, fallback: number): number {
+    if (!rawValue) return fallback;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return fallback;
+    if (parsed <= 0) return fallback;
+    return Math.floor(parsed);
+}
+
+function isDuplicateExternalMessageError(errorMessage: string): boolean {
+    return /duplicate key/i.test(errorMessage) && /external_message_id/i.test(errorMessage);
 }
 
 function chunkTelegramText(rawText: string, limit: number): string[] {

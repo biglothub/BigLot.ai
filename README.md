@@ -55,7 +55,9 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
    SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
    TELEGRAM_BOT_TOKEN=your_telegram_bot_token
    TELEGRAM_BOT_USERNAME=your_bot_username
-   TELEGRAM_WEBHOOK_SECRET=optional_webhook_secret
+   TELEGRAM_WEBHOOK_SECRET=strong_random_secret
+   TELEGRAM_REQUIRE_WEBHOOK_SECRET=0
+   TELEGRAM_RATE_LIMIT_PER_MINUTE=15
    ```
 
    Supported values for `AI_MODEL`: `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `deepseek`, `deepseek-r1`
@@ -121,6 +123,24 @@ For Telegram Phase 1 (`Add Telegram Bot` + account linking + shared web/Telegram
 Then point Telegram webhook to:
 
 `POST /api/telegram/webhook`
+
+Production notes:
+- `TELEGRAM_WEBHOOK_SECRET` is required in production.
+- Webhook retries are deduplicated using `telegram_webhook_events`.
+- Duplicate Telegram message retries are deduplicated by `messages.external_message_id` unique index.
+- `/unlink` command is supported directly in Telegram.
+- Inbound Telegram user messages are rate-limited per account (`TELEGRAM_RATE_LIMIT_PER_MINUTE`).
+
+Example webhook setup:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url":"https://www.biglot.ai/api/telegram/webhook",
+    "secret_token":"<TELEGRAM_WEBHOOK_SECRET>"
+  }'
+```
 
 ## Contributing 🤝
 

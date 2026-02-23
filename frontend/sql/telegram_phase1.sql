@@ -23,6 +23,10 @@ alter table messages
 create index if not exists idx_messages_chat_created_at
     on messages (chat_id, created_at desc);
 
+create unique index if not exists idx_messages_telegram_external_unique
+    on messages (chat_id, channel, external_message_id)
+    where channel = 'telegram' and external_message_id is not null;
+
 create table if not exists telegram_link_tokens (
     id uuid primary key default gen_random_uuid(),
     token_hash text not null unique,
@@ -71,7 +75,20 @@ create table if not exists chat_channels (
 create index if not exists idx_chat_channels_biglot_user
     on chat_channels (biglot_user_id, channel);
 
+create table if not exists telegram_webhook_events (
+    id uuid primary key default gen_random_uuid(),
+    update_id bigint not null unique,
+    status text not null default 'processing',
+    error text,
+    received_at timestamptz not null default now(),
+    processed_at timestamptz
+);
+
+create index if not exists idx_telegram_webhook_events_status_received_at
+    on telegram_webhook_events (status, received_at desc);
+
 -- Development default (match current project behavior)
 alter table telegram_link_tokens disable row level security;
 alter table telegram_links disable row level security;
 alter table chat_channels disable row level security;
+alter table telegram_webhook_events disable row level security;
