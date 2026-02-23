@@ -16,6 +16,11 @@ export type TelegramLinkRecord = {
     updated_at: string;
 };
 
+type TelegramSendOptions = {
+    parseMode?: 'HTML' | 'MarkdownV2';
+    disableWebPagePreview?: boolean;
+};
+
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
 
 export function isValidBigLotUserId(value: unknown): value is string {
@@ -47,15 +52,17 @@ export function getTelegramWebhookSecret(): string | null {
     return secret && secret.length > 0 ? secret : null;
 }
 
-export async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
+export async function sendTelegramMessage(chatId: number, text: string, options: TelegramSendOptions = {}): Promise<void> {
     const token = getTelegramBotToken();
+    const parseMode = options.parseMode;
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             chat_id: chatId,
             text,
-            disable_web_page_preview: true
+            disable_web_page_preview: options.disableWebPagePreview ?? true,
+            ...(parseMode ? { parse_mode: parseMode } : {})
         })
     });
 
