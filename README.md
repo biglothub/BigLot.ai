@@ -29,6 +29,7 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 - Supabase Account
 - OpenAI API Key (for OpenAI models)
 - DeepSeek API Key (optional, required when `AI_MODEL=deepseek` or `AI_MODEL=deepseek-r1`)
+- Telegram Bot Token + Username (optional, required for Telegram Phase 1)
 
 ### Installation
 
@@ -51,6 +52,10 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
    AI_MODEL=gpt-4o
    PUBLIC_SUPABASE_URL=your_supabase_url
    PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+   TELEGRAM_BOT_USERNAME=your_bot_username
+   TELEGRAM_WEBHOOK_SECRET=optional_webhook_secret
    ```
 
    Supported values for `AI_MODEL`: `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `deepseek`, `deepseek-r1`
@@ -106,6 +111,16 @@ CREATE TABLE custom_indicators (
 
 ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;
 ```
+
+For Telegram Phase 1 (`Add Telegram Bot` + account linking + shared web/Telegram conversation), run:
+
+```sql
+-- paste SQL from frontend/sql/telegram_phase1.sql
+```
+
+Then point Telegram webhook to:
+
+`POST /api/telegram/webhook`
 
 ## Contributing 🤝
 

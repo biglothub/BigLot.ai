@@ -9,6 +9,9 @@
         PanelLeftOpen,
         BarChart3,
         Bot,
+        Loader2,
+        Link2,
+        Unlink2
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import { fade } from "svelte/transition";
@@ -26,6 +29,31 @@
         void goto("/");
     }
 
+    async function handleAddTelegramClick() {
+        const tokenData = await chatState.createTelegramLink();
+        if (!tokenData) {
+            const message = chatState.telegramError ?? "Failed to create Telegram link.";
+            alert(message);
+            return;
+        }
+
+        if (typeof window !== "undefined") {
+            window.open(tokenData.deepLink, "_blank", "noopener,noreferrer");
+        }
+    }
+
+    async function handleUnlinkTelegramClick() {
+        const confirmed = confirm("Unlink this Telegram account from BigLot.ai?");
+        if (!confirmed) return;
+
+        const ok = await chatState.unlinkTelegram();
+        if (!ok) {
+            const message =
+                chatState.telegramError ?? "Failed to unlink Telegram account.";
+            alert(message);
+        }
+    }
+
     async function handleChatHistoryClick(chatId: string) {
         try {
             await chatState.loadChat(chatId);
@@ -40,7 +68,8 @@
     }
 
     onMount(() => {
-        chatState.loadAllChats();
+        void chatState.loadAllChats();
+        void chatState.refreshTelegramLinkStatus();
     });
 </script>
 
@@ -101,6 +130,52 @@
                 >AI</span
             >
         </a>
+
+        <button
+            onclick={handleAddTelegramClick}
+            disabled={chatState.isTelegramLinkLoading}
+            class="w-full flex items-center gap-2 px-4 py-3 bg-sky-500/10 hover:bg-sky-500/20 text-foreground/80 hover:text-sky-300 border border-sky-400/20 rounded-lg transition-all duration-200 disabled:opacity-60"
+        >
+            <Link2 size={18} />
+            <span class="font-semibold text-sm">
+                {chatState.telegramLinkStatus.linked
+                    ? "Reconnect Telegram Bot"
+                    : "Add Telegram Bot"}
+            </span>
+            {#if chatState.isTelegramLinkLoading}
+                <Loader2 size={14} class="ml-auto animate-spin" />
+            {:else if chatState.telegramLinkStatus.linked}
+                <span
+                    class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-bold"
+                    >Linked</span
+                >
+            {/if}
+        </button>
+
+        {#if chatState.telegramLinkStatus.linked}
+            <div
+                class="px-3 py-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5"
+            >
+                <div class="text-[11px] text-muted-foreground">Connected</div>
+                <div class="text-xs font-medium truncate">
+                    {chatState.telegramLinkStatus.displayName ?? "Telegram user"}
+                </div>
+                <button
+                    onclick={handleUnlinkTelegramClick}
+                    disabled={chatState.isTelegramLinkLoading}
+                    class="mt-2 w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-red-400/20 text-red-300 hover:bg-red-500/10 transition-colors"
+                >
+                    <Unlink2 size={12} />
+                    <span>Unlink</span>
+                </button>
+            </div>
+        {/if}
+
+        {#if chatState.telegramError}
+            <div class="px-2 text-[11px] text-red-300/90">
+                {chatState.telegramError}
+            </div>
+        {/if}
     </div>
 
     <!-- Chat History List -->
