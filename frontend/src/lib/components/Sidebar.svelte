@@ -11,7 +11,8 @@
         Bot,
         Loader2,
         Link2,
-        Unlink2
+        Unlink2,
+        BarChart
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import { fade } from "svelte/transition";
@@ -131,6 +132,17 @@
             >
         </a>
 
+        <a
+            href="/analytics"
+            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500/10 to-purple-500/10 hover:from-blue-500/20 hover:to-purple-500/20 text-foreground/80 hover:text-blue-300 border border-white/5 hover:border-blue-500/20 rounded-lg transition-all duration-200 group"
+        >
+            <BarChart
+                size={18}
+                class="text-blue-400 group-hover:text-blue-300 transition-colors"
+            />
+            <span class="font-semibold text-sm">Analytics</span>
+        </a>
+
         <button
             onclick={handleAddTelegramClick}
             disabled={chatState.isTelegramLinkLoading}
@@ -234,12 +246,13 @@
 
     <!-- Footer -->
     <div class="p-3 border-t border-border/50 space-y-1">
-        <button
+        <a
+            href="/settings"
             class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 rounded-md transition-colors text-left"
         >
             <Settings size={18} />
             <span>Settings</span>
-        </button>
+        </a>
         <div class="flex items-center gap-3 px-3 py-2 mt-1">
             <div
                 class="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-xs font-bold text-white"
