@@ -73,6 +73,58 @@ registerTool({
 	execute: async (args): Promise<ToolResult> => {
 		const symbol = String(args.symbol || '');
 		const vsCurrency = String(args.vs_currency || 'usd');
+
+		// --- Forex / Commodity fallback via Yahoo Finance ---
+		if (isForexOrCommodity(symbol)) {
+			const cacheKey = toolCache.generateKey('get_market_data_forex', { symbol });
+			const cached = toolCache.get<ToolResult>(cacheKey);
+			if (cached) return cached;
+
+			const yahooResult = await fetchYahooMarketData(symbol);
+			if ('error' in yahooResult) {
+				return {
+					success: false,
+					contentBlocks: [{ type: 'error', message: yahooResult.error, tool: 'get_market_data' }],
+					textSummary: `Error: ${yahooResult.error}`
+				};
+			}
+
+			const { name, price, change24h, volume, high24h, low24h, previousClose } = yahooResult;
+			const sym = symbol.toUpperCase().replace(/[^A-Z]/g, '');
+
+			const formatNum = (n: number) => {
+				if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+				if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+				if (n >= 1e3) return `${(n / 1e3).toFixed(2)}K`;
+				return n.toLocaleString('en-US', { maximumFractionDigits: 6 });
+			};
+
+			const direction = change24h > 0 ? 'up' : change24h < 0 ? 'down' : 'neutral';
+			const changeStr = `${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%`;
+
+			const result: ToolResult = {
+				success: true,
+				contentBlocks: [
+					{
+						type: 'metric_card',
+						title: `${name} (${sym})`,
+						metrics: [
+							{ label: 'Price', value: `$${formatNum(price)}`, change: changeStr, direction: direction as 'up' | 'down' | 'neutral' },
+							{ label: '24h High', value: `$${formatNum(high24h)}`, direction: 'neutral' },
+							{ label: '24h Low', value: `$${formatNum(low24h)}`, direction: 'neutral' },
+							{ label: 'Prev Close', value: `$${formatNum(previousClose)}`, direction: 'neutral' },
+							...(volume > 0 ? [{ label: 'Volume', value: formatNum(volume), direction: 'neutral' as const }] : [])
+						]
+					}
+				],
+				textSummary: `${name} (${sym}): Price $${formatNum(price)} (${changeStr} 24h), 24h Range $${formatNum(low24h)} - $${formatNum(high24h)}, Prev Close $${formatNum(previousClose)}`
+			};
+
+			toolCache.set(cacheKey, result, 60_000);
+			return result;
+		}
+
+		// --- Crypto via CoinGecko ---
 		const coinId = resolveSymbol(symbol);
 
 		const cacheKey = toolCache.generateKey('get_market_data', { coinId, vsCurrency });
