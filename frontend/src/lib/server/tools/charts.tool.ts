@@ -2,6 +2,7 @@
 import { registerTool, type ToolResult } from './registry';
 import { toolCache } from '../cache.server';
 import type { OHLCV } from '$lib/types/contentBlock';
+import { isForexOrCommodity, fetchYahooOHLCV } from './yahooFinance';
 
 const BINANCE_BASE = 'https://api.binance.com/api/v3';
 
@@ -193,13 +194,13 @@ function calculateBollingerBands(
 registerTool({
 	name: 'get_crypto_chart',
 	description:
-		'Fetch cryptocurrency price chart data (OHLCV candlestick data) from Binance. Returns an interactive candlestick chart. Use when users ask to see a chart, price action, or candles for any crypto pair.',
+		'Fetch price chart data (OHLCV candlestick data). Supports crypto (BTC, ETH, SOL), forex (EURUSD, GBPJPY), and commodities (XAUUSD for Gold, XAGUSD for Silver). Returns an interactive candlestick chart.',
 	parameters: {
 		type: 'object',
 		properties: {
 			symbol: {
 				type: 'string',
-				description: 'Trading pair symbol (e.g. BTC, ETHUSDT, SOLUSDT)'
+				description: 'Trading pair symbol (e.g. BTC, ETHUSDT, SOLUSDT, XAUUSD, EURUSD)'
 			},
 			interval: {
 				type: 'string',
@@ -215,9 +216,59 @@ registerTool({
 	},
 	timeout: 15_000,
 	execute: async (args): Promise<ToolResult> => {
-		const symbol = normalizeSymbol(String(args.symbol || 'BTCUSDT'));
+		const rawSymbol = String(args.symbol || 'BTCUSDT');
 		const interval = normalizeInterval(String(args.interval || '4h'));
 		const limit = Math.min(Math.max(Number(args.limit) || 100, 10), 500);
+
+		// --- Forex / Commodity fallback via Yahoo Finance ---
+		if (isForexOrCommodity(rawSymbol)) {
+			const displaySymbol = rawSymbol.toUpperCase().replace(/[^A-Z]/g, '');
+			const cacheKey = toolCache.generateKey('get_crypto_chart_forex', { displaySymbol, interval, limit });
+			const cached = toolCache.get<ToolResult>(cacheKey);
+			if (cached) return cached;
+
+			const yahooResult = await fetchYahooOHLCV(rawSymbol, interval, limit);
+			if ('error' in yahooResult) {
+				return {
+					success: false,
+					contentBlocks: [{ type: 'error', message: yahooResult.error, tool: 'get_crypto_chart' }],
+					textSummary: `Error: ${yahooResult.error}`
+				};
+			}
+
+			const { ohlcv } = yahooResult;
+			if (ohlcv.length === 0) {
+				return {
+					success: false,
+					contentBlocks: [{ type: 'error', message: `No chart data available for ${displaySymbol}`, tool: 'get_crypto_chart' }],
+					textSummary: `Error: No chart data for ${displaySymbol}.`
+				};
+			}
+
+			const lastCandle = ohlcv[ohlcv.length - 1];
+			const firstCandle = ohlcv[0];
+			const priceChange = ((lastCandle.close - firstCandle.close) / firstCandle.close) * 100;
+
+			const result: ToolResult = {
+				success: true,
+				contentBlocks: [
+					{
+						type: 'chart',
+						chartType: 'candlestick',
+						symbol: displaySymbol,
+						interval,
+						data: ohlcv
+					}
+				],
+				textSummary: `${displaySymbol} ${interval} chart: ${ohlcv.length} candles, Latest close: ${lastCandle.close}, Price change over period: ${priceChange.toFixed(2)}%, High: ${Math.max(...ohlcv.map((c) => c.high)).toFixed(2)}, Low: ${Math.min(...ohlcv.map((c) => c.low)).toFixed(2)}`
+			};
+
+			toolCache.set(cacheKey, result, 60_000);
+			return result;
+		}
+
+		// --- Crypto via Binance ---
+		const symbol = normalizeSymbol(rawSymbol);
 
 		const cacheKey = toolCache.generateKey('get_crypto_chart', { symbol, interval, limit });
 		const cached = toolCache.get<ToolResult>(cacheKey);
@@ -283,13 +334,13 @@ registerTool({
 registerTool({
 	name: 'get_technical_analysis',
 	description:
-		'Calculate technical indicators (RSI, MACD, Bollinger Bands, SMA, EMA) for a cryptocurrency. Returns a chart with indicators overlaid and a data table. Use when users ask for technical analysis, RSI, MACD, moving averages, or indicators.',
+		'Calculate technical indicators (RSI, MACD, Bollinger Bands, SMA, EMA) for any asset. Supports crypto (BTC, ETH), forex (EURUSD), and commodities (XAUUSD for Gold, XAGUSD for Silver). Returns a chart with indicators overlaid and a data table.',
 	parameters: {
 		type: 'object',
 		properties: {
 			symbol: {
 				type: 'string',
-				description: 'Trading pair symbol (e.g. BTC, ETHUSDT, SOLUSDT)'
+				description: 'Trading pair symbol (e.g. BTC, ETHUSDT, SOLUSDT, XAUUSD, EURUSD)'
 			},
 			indicators: {
 				type: 'array',
