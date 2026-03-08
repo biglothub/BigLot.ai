@@ -4,8 +4,26 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { generateIndicator } from '$lib/server/aiEngine.server';
+import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+    // Rate limiting (stricter for engine - expensive operation)
+    const clientIp = getClientAddress() || 'unknown';
+    const rateLimitResult = checkRateLimit(clientIp, RATE_LIMITS.engine);
+    
+    if (!rateLimitResult.allowed) {
+        return json(
+            { error: 'Too many requests. Indicator generation is limited. Please try again later.' },
+            { 
+                status: 429,
+                headers: {
+                    'X-RateLimit-Remaining': '0',
+                    'X-RateLimit-Reset': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
+                }
+            }
+        );
+    }
+
     const { prompt } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
