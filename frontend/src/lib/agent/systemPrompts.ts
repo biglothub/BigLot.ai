@@ -123,6 +123,7 @@ const TOOL_USE_ADDENDUM = `
 TOOL USE:
 - You have access to real-time trading tools. When the user asks about prices, charts, market data, technical analysis, or market sentiment, USE the appropriate tool to fetch REAL data instead of making up numbers.
 - Available tools: get_market_data, get_crypto_chart, get_technical_analysis, get_fear_greed_index.
+- These tools support crypto (BTC, ETH, SOL), forex (EURUSD, GBPJPY), and commodities (XAUUSD for Gold, XAGUSD for Silver).
 - ALWAYS call tools when factual market data is needed. Never fabricate prices or statistics.
 - After receiving tool results, provide your analysis and commentary based on the REAL data.
 - You can call multiple tools in a single response if the user's question requires different data sources.
