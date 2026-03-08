@@ -1,11 +1,16 @@
 import { supabase } from '$lib/supabase';
+import { parseSSEStream } from '$lib/utils/sseParser';
+import type { ContentBlock, ToolCallStatus, PlanBlock } from '$lib/types/contentBlock';
 
 export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript';
+export type ChatMode = 'normal' | 'agent';
 export type ChatChannel = 'web' | 'telegram';
 
 export type Message = {
     role: 'user' | 'assistant' | 'system';
     content: string;
+    contentBlocks?: ContentBlock[];
+    toolCalls?: ToolCallStatus[];
     image_url?: string;
     mode?: AgentMode;
     channel?: ChatChannel;
@@ -55,6 +60,7 @@ class ChatState {
     isLoading = $state(false);
     selectedImage = $state<string | null>(null);
     agentMode = $state<AgentMode>('coach');
+    chatMode = $state<ChatMode>('normal');
     lastDbError = $state<string | null>(null);
 
     biglotUserId = $state<string>('anonymous');
@@ -64,6 +70,7 @@ class ChatState {
     telegramError = $state<string | null>(null);
 
     private static readonly AGENT_MODE_STORAGE_KEY = 'biglot.agentMode';
+    private static readonly CHAT_MODE_STORAGE_KEY = 'biglot.chatMode';
     private static readonly USER_ID_STORAGE_KEY = 'biglot.userId';
 
     constructor() {
@@ -72,6 +79,11 @@ class ChatState {
         const savedMode = localStorage.getItem(ChatState.AGENT_MODE_STORAGE_KEY);
         if (savedMode === 'coach' || savedMode === 'recovery' || savedMode === 'analyst' || savedMode === 'pinescript') {
             this.agentMode = savedMode;
+        }
+
+        const savedChatMode = localStorage.getItem(ChatState.CHAT_MODE_STORAGE_KEY);
+        if (savedChatMode === 'normal' || savedChatMode === 'agent') {
+            this.chatMode = savedChatMode;
         }
 
         const savedUserId = localStorage.getItem(ChatState.USER_ID_STORAGE_KEY);
@@ -88,6 +100,12 @@ class ChatState {
         this.agentMode = mode;
         if (typeof localStorage === 'undefined') return;
         localStorage.setItem(ChatState.AGENT_MODE_STORAGE_KEY, mode);
+    }
+
+    setChatMode(mode: ChatMode) {
+        this.chatMode = mode;
+        if (typeof localStorage === 'undefined') return;
+        localStorage.setItem(ChatState.CHAT_MODE_STORAGE_KEY, mode);
     }
 
     private generateBrowserUserId(): string {
@@ -269,16 +287,23 @@ class ChatState {
             }
 
             this.currentChatId = chatId;
-            this.messages = (data ?? []).map((row: any) => ({
-                role: row.role,
-                content: row.content ?? '',
-                image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
-                channel: row.channel === 'web' || row.channel === 'telegram' ? row.channel : undefined,
-                mode:
-                    row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript'
-                        ? row.mode
-                        : undefined
-            })) as Message[];
+            this.messages = (data ?? []).map((row: any) => {
+                const msg: Message = {
+                    role: row.role,
+                    content: row.content ?? '',
+                    image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
+                    channel: row.channel === 'web' || row.channel === 'telegram' ? row.channel : undefined,
+                    mode:
+                        row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript'
+                            ? row.mode
+                            : undefined
+                };
+                // Restore content blocks from DB if available
+                if (row.content_blocks && Array.isArray(row.content_blocks)) {
+                    msg.contentBlocks = row.content_blocks;
+                }
+                return msg;
+            });
         } finally {
             this.isLoading = false;
         }
@@ -399,41 +424,141 @@ class ChatState {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: this.messages, mode: this.agentMode })
+                body: JSON.stringify({ messages: this.messages, mode: this.agentMode, chatMode: this.chatMode })
             });
 
             if (!response.ok) throw new Error('Failed to fetch');
+            if (!response.body) throw new Error('No response body');
 
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No reader');
+            // Add empty assistant message
+            this.messages.push({
+                role: 'assistant',
+                content: '',
+                contentBlocks: [],
+                toolCalls: [],
+                mode: modeUsed,
+                channel: 'web'
+            });
+            const msgIdx = this.messages.length - 1;
 
-            this.messages.push({ role: 'assistant', content: '', mode: modeUsed, channel: 'web' });
-            const currentMessageIndex = this.messages.length - 1;
+            let fullText = '';
+            const allBlocks: ContentBlock[] = [];
 
-            const decoder = new TextDecoder();
-            let fullAssistantContent = '';
+            // Parse SSE stream
+            for await (const event of parseSSEStream(response.body)) {
+                try {
+                    const data = JSON.parse(event.data);
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const chunk = decoder.decode(value);
-                fullAssistantContent += chunk;
-                this.messages[currentMessageIndex].content = fullAssistantContent;
+                    switch (event.event) {
+                        case 'text_delta': {
+                            fullText += data.content || '';
+                            this.messages[msgIdx].content = fullText;
+                            break;
+                        }
+                        case 'tool_start': {
+                            const toolCall: ToolCallStatus = {
+                                name: data.tool,
+                                args: data.args,
+                                status: 'running',
+                                startedAt: Date.now()
+                            };
+                            this.messages[msgIdx].toolCalls = [
+                                ...(this.messages[msgIdx].toolCalls || []),
+                                toolCall
+                            ];
+                            break;
+                        }
+                        case 'tool_result': {
+                            // Mark tool as complete
+                            const toolCalls = this.messages[msgIdx].toolCalls || [];
+                            const tc = toolCalls.find(
+                                (t) => t.name === data.tool && t.status === 'running'
+                            );
+                            if (tc) tc.status = 'complete';
+                            this.messages[msgIdx].toolCalls = [...toolCalls];
+
+                            // Add content blocks
+                            if (Array.isArray(data.blocks)) {
+                                allBlocks.push(...data.blocks);
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
+                        case 'error': {
+                            // Mark any running tools as error
+                            const runningTools = this.messages[msgIdx].toolCalls || [];
+                            for (const t of runningTools) {
+                                if (t.status === 'running') t.status = 'error';
+                            }
+                            this.messages[msgIdx].toolCalls = [...runningTools];
+                            break;
+                        }
+                        case 'plan_create': {
+                            const plan = data.plan as PlanBlock;
+                            allBlocks.push(plan);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            break;
+                        }
+                        case 'plan_update': {
+                            const planBlock = allBlocks.find(
+                                (b): b is PlanBlock => b.type === 'plan' && (b as PlanBlock).planId === data.planId
+                            );
+                            if (planBlock) {
+                                const step = planBlock.steps.find((s: any) => s.id === data.stepId);
+                                if (step) {
+                                    step.status = data.status;
+                                    if (data.result) step.result = data.result;
+                                    if (data.status === 'running') step.startedAt = Date.now();
+                                    if (data.status === 'complete' || data.status === 'error') step.completedAt = Date.now();
+                                }
+                                planBlock.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
+                        case 'plan_complete': {
+                            const completedPlan = allBlocks.find(
+                                (b): b is PlanBlock => b.type === 'plan' && (b as PlanBlock).planId === data.planId
+                            );
+                            if (completedPlan) {
+                                completedPlan.status = data.status;
+                                completedPlan.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
+                        case 'done': {
+                            // Final content blocks from server
+                            if (Array.isArray(data.contentBlocks) && data.contentBlocks.length > 0) {
+                                this.messages[msgIdx].contentBlocks = data.contentBlocks;
+                            }
+                            break;
+                        }
+                    }
+                } catch {
+                    // Skip malformed SSE events
+                }
             }
 
             // 3. Save assistant message after stream finishes.
             {
+                const finalBlocks = this.messages[msgIdx].contentBlocks;
                 let payload: Record<string, unknown> = {
                     chat_id: chatId,
                     role: 'assistant',
-                    content: fullAssistantContent,
+                    content: fullText,
                     mode: modeUsed,
                     channel: 'web'
                 };
 
+                // Include content_blocks if we have structured data
+                if (finalBlocks && finalBlocks.length > 0) {
+                    payload.content_blocks = finalBlocks;
+                }
+
                 let insertError: { message: string } | null = null;
 
-                for (let i = 0; i < 3; i += 1) {
+                for (let i = 0; i < 4; i += 1) {
                     const { error } = await supabase.from('messages').insert(payload);
                     if (!error) {
                         insertError = null;
@@ -441,6 +566,10 @@ class ChatState {
                     }
 
                     insertError = error;
+                    if (/content_blocks/i.test(error.message)) {
+                        delete payload.content_blocks;
+                        continue;
+                    }
                     if (/\bmode\b/i.test(error.message)) {
                         delete payload.mode;
                         continue;

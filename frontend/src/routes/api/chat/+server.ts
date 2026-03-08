@@ -2,7 +2,11 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
-import { getClientForModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
+import { getClientForModel, isAIModel } from '$lib/server/aiProvider.server';
+import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
+import { runAgentLoop } from '$lib/server/agentLoop.server';
+import type { ContentBlock } from '$lib/types/contentBlock';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type IncomingMessage = {
     role: 'user' | 'assistant' | 'system';
@@ -14,7 +18,28 @@ function isRole(value: unknown): value is IncomingMessage['role'] {
     return value === 'user' || value === 'assistant' || value === 'system';
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+function sseEvent(event: string, data: unknown): string {
+    return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+    // Rate limiting
+    const clientIp = getClientAddress() || 'unknown';
+    const rateLimitResult = checkRateLimit(clientIp, RATE_LIMITS.chat);
+
+    if (!rateLimitResult.allowed) {
+        return json(
+            { error: 'Too many requests. Please try again later.' },
+            {
+                status: 429,
+                headers: {
+                    'X-RateLimit-Remaining': '0',
+                    'X-RateLimit-Reset': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
+                }
+            }
+        );
+    }
+
     let payload: any;
     try {
         payload = await request.json();
@@ -42,11 +67,14 @@ export const POST: RequestHandler = async ({ request }) => {
         .slice(-MAX_MESSAGES);
 
     const mode = normalizeAgentMode(payload?.mode);
-    const systemPrompt = getSystemPrompt(mode);
+    const chatMode = payload?.chatMode === 'agent' ? 'agent' : 'normal';
+    const planningEnabled = chatMode === 'agent';
+    const systemPrompt = getSystemPrompt(mode, planningEnabled);
 
-    // Debug-only helper to validate mode switching without calling OpenAI.
-    // Set `BIGLOT_CHAT_ECHO_MODE=1` in server env to enable.
-    const selectedModel = resolveDefaultAIModel();
+    // Select model based on chatMode — configurable via .env
+    const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : 'deepseek';
+    const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : 'gpt-4o';
+    const selectedModel = chatMode === 'agent' ? agentModel : normalModel;
 
     if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
         return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
@@ -70,51 +98,95 @@ export const POST: RequestHandler = async ({ request }) => {
         );
     }
 
-    // Create formatted messages for the active model provider
-    const formattedMessages = [
-        { 
-            role: "system", 
+    // Build formatted messages for OpenAI
+    const formattedMessages: ChatCompletionMessageParam[] = [
+        {
+            role: 'system',
             content: systemPrompt
         },
-        ...safeMessages.map((m) => {
-            // Only allow images from the user; ignore images on assistant messages.
+        ...safeMessages.map((m): ChatCompletionMessageParam => {
             if (m.role === 'user' && m.image_url) {
                 return {
-                    role: m.role,
+                    role: 'user',
                     content: [
-                        { type: 'text', text: m.content || 'Analyze this image.' },
-                        { type: 'image_url', image_url: { url: m.image_url } }
+                        { type: 'text' as const, text: m.content || 'Analyze this image.' },
+                        { type: 'image_url' as const, image_url: { url: m.image_url } }
                     ]
                 };
             }
-            return { role: m.role, content: m.content };
+            return { role: m.role as 'user' | 'assistant' | 'system', content: m.content };
         })
     ];
 
-    let stream;
-    try {
-        stream = await client.chat.completions.create({
-            model: apiModel,
-            messages: formattedMessages as any,
-            stream: true,
-        });
-    } catch (e: any) {
-        return json(
-            { error: e?.message || `Failed to call ${provider}` },
-            { status: 502, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
-        );
-    }
-
+    // SSE streaming
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
         async start(controller) {
             try {
-                for await (const chunk of stream) {
-                    const content = chunk.choices[0]?.delta?.content || '';
-                    if (content) controller.enqueue(encoder.encode(content));
+                if (chatMode === 'agent') {
+                    // Agent mode: GPT-4o with tool calling via agent loop
+                    const allBlocks: ContentBlock[] = [];
+
+                    const resultBlocks = await runAgentLoop({
+                        client,
+                        apiModel,
+                        messages: formattedMessages,
+                        maxIterations: 5,
+                        planningEnabled,
+                        callbacks: {
+                            onTextDelta: (text) => {
+                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                            },
+                            onToolStart: (tool, args) => {
+                                controller.enqueue(encoder.encode(sseEvent('tool_start', { tool, args })));
+                            },
+                            onToolResult: (tool, blocks) => {
+                                allBlocks.push(...blocks);
+                                controller.enqueue(encoder.encode(sseEvent('tool_result', { tool, blocks })));
+                            },
+                            onPlanCreate: (plan) => {
+                                allBlocks.push(plan);
+                                controller.enqueue(encoder.encode(sseEvent('plan_create', { plan })));
+                            },
+                            onPlanStepUpdate: (planId, stepId, status, result) => {
+                                controller.enqueue(encoder.encode(sseEvent('plan_update', { planId, stepId, status, result })));
+                            },
+                            onPlanComplete: (planId, status) => {
+                                controller.enqueue(encoder.encode(sseEvent('plan_complete', { planId, status })));
+                            },
+                            onError: (message) => {
+                                controller.enqueue(encoder.encode(sseEvent('error', { message })));
+                            }
+                        }
+                    });
+
+                    for (const block of resultBlocks) {
+                        if (!allBlocks.includes(block)) {
+                            allBlocks.push(block);
+                        }
+                    }
+
+                    controller.enqueue(encoder.encode(sseEvent('done', { contentBlocks: allBlocks })));
+                } else {
+                    // Normal mode: DeepSeek direct streaming, no tools
+                    const stream = await client.chat.completions.create({
+                        model: apiModel,
+                        messages: formattedMessages,
+                        stream: true
+                    });
+
+                    for await (const chunk of stream) {
+                        const text = chunk.choices[0]?.delta?.content;
+                        if (text) {
+                            controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                        }
+                    }
+
+                    controller.enqueue(encoder.encode(sseEvent('done', { contentBlocks: [] })));
                 }
-            } catch {
-                // Client will surface a generic error. We can't send a JSON error mid-stream.
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : `Failed to call ${provider}`;
+                controller.enqueue(encoder.encode(sseEvent('error', { message })));
             } finally {
                 controller.close();
             }
@@ -123,9 +195,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
     return new Response(readableStream, {
         headers: {
-            // We stream plain text chunks; this is not an SSE stream.
-            'Content-Type': 'text/plain; charset=utf-8',
+            'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
             'X-BigLot-Mode': mode,
             'X-BigLot-Model': selectedModel
         }

@@ -118,16 +118,59 @@ export function normalizeAgentMode(value: unknown): AgentMode {
   return 'coach';
 }
 
-export function getSystemPrompt(mode: AgentMode): string {
+const TOOL_USE_ADDENDUM = `
+
+TOOL USE:
+- You have access to real-time trading tools. When the user asks about prices, charts, market data, technical analysis, or market sentiment, USE the appropriate tool to fetch REAL data instead of making up numbers.
+- Available tools: get_market_data, get_crypto_chart, get_technical_analysis, get_fear_greed_index.
+- ALWAYS call tools when factual market data is needed. Never fabricate prices or statistics.
+- After receiving tool results, provide your analysis and commentary based on the REAL data.
+- You can call multiple tools in a single response if the user's question requires different data sources.
+- When showing charts or data, add your professional trading analysis and insights.`;
+
+const PLANNING_ADDENDUM = `
+
+PLANNING PROTOCOL (MANDATORY):
+When the user asks a question that requires data gathering, analysis, or multi-step work:
+
+1. ALWAYS call the create_plan tool FIRST before calling any other tool.
+2. The plan should have 2-6 concrete, actionable steps.
+3. Each step must have a clear title and specify which tool to use:
+   - Use real tool names for data steps: "get_market_data", "get_crypto_chart", "get_technical_analysis", "get_fear_greed_index"
+   - Use "reasoning" for analysis/thinking/synthesis steps
+4. The LAST step should always be a "reasoning" step to synthesize all findings into a comprehensive response.
+5. After creating the plan, you will execute each step one by one automatically.
+
+Example plan for "Analyze BTC market outlook":
+- step_1: Fetch BTC current price and 24h metrics (toolName: "get_market_data")
+- step_2: Get BTC 4h chart data (toolName: "get_crypto_chart")
+- step_3: Run technical analysis with RSI, MACD, Bollinger Bands (toolName: "get_technical_analysis")
+- step_4: Check overall market sentiment (toolName: "get_fear_greed_index")
+- step_5: Synthesize analysis and provide trading outlook (toolName: "reasoning")
+
+SKIP planning for simple questions: greetings, quick facts, clarifications, or single-sentence answers.
+When in doubt, CREATE A PLAN. It's better to over-plan than to jump into tool calls without structure.`;
+
+export function getSystemPrompt(mode: AgentMode, planningEnabled = false): string {
+  let base: string;
   switch (mode) {
     case 'pinescript':
-      return PINESCRIPT_SYSTEM_PROMPT;
+      base = PINESCRIPT_SYSTEM_PROMPT;
+      break;
     case 'analyst':
-      return ANALYST_SYSTEM_PROMPT;
+      base = ANALYST_SYSTEM_PROMPT;
+      break;
     case 'recovery':
-      return RECOVERY_SYSTEM_PROMPT;
+      base = RECOVERY_SYSTEM_PROMPT;
+      break;
     case 'coach':
     default:
-      return COACH_SYSTEM_PROMPT;
+      base = COACH_SYSTEM_PROMPT;
+      break;
   }
+  let prompt = base + TOOL_USE_ADDENDUM;
+  if (planningEnabled) {
+    prompt += PLANNING_ADDENDUM;
+  }
+  return prompt;
 }

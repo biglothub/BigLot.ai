@@ -8,11 +8,15 @@
         Loader2,
         Plus,
         GripHorizontal,
+        Zap,
+        MessageSquare,
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
+    import { onMount } from "svelte";
 
     let input = $state("");
     let fileInput: HTMLInputElement;
+    let textareaRef: HTMLTextAreaElement;
 
     async function handleSend() {
         if ((!input.trim() && !chatState.selectedImage) || chatState.isLoading)
@@ -40,11 +44,47 @@
     }
 
     function handleKeydown(e: KeyboardEvent) {
+        // Enter to send (Shift+Enter for newline)
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
+        // Ctrl+K for new chat
+        if (e.key === "k" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            handleNewChat();
+        }
+        // Escape to blur
+        if (e.key === "Escape") {
+            textareaRef?.blur();
+        }
     }
+
+    function handleNewChat() {
+        chatState.newChat();
+    }
+
+    function toggleChatMode() {
+        chatState.setChatMode(chatState.chatMode === 'normal' ? 'agent' : 'normal');
+    }
+
+    // Global keyboard shortcuts
+    onMount(() => {
+        const handleGlobalKeydown = (e: KeyboardEvent) => {
+            // Only handle if not typing in textarea
+            if (document.activeElement?.tagName === 'TEXTAREA') return;
+            if (document.activeElement?.tagName === 'INPUT') return;
+            
+            // Ctrl+K for new chat
+            if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                handleNewChat();
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeydown);
+        return () => window.removeEventListener('keydown', handleGlobalKeydown);
+    });
 </script>
 
 <div class="w-full max-w-3xl mx-auto p-4">
@@ -85,12 +125,31 @@
             <Image size={20} />
         </button>
 
+        <!-- Mode Toggle -->
+        <button
+            onclick={toggleChatMode}
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 mb-0.5 border
+                {chatState.chatMode === 'agent'
+                    ? 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
+                    : 'bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground'}"
+            title={chatState.chatMode === 'agent' ? 'Agent Mode (GPT-4o) - Click to switch to Normal' : 'Normal Mode (DeepSeek) - Click to switch to Agent'}
+        >
+            {#if chatState.chatMode === 'agent'}
+                <Zap size={14} />
+                <span>Agent</span>
+            {:else}
+                <MessageSquare size={14} />
+                <span>Normal</span>
+            {/if}
+        </button>
+
         <!-- Textarea -->
         <textarea
+            bind:this={textareaRef}
             bind:value={input}
             onkeydown={handleKeydown}
             disabled={chatState.isLoading}
-            placeholder="Ask anything..."
+            placeholder="Ask anything... (Shift+Enter for newline)"
             class="flex-1 bg-transparent border-0 outline-none ring-0 focus:ring-0 focus:outline-none text-foreground placeholder:text-muted-foreground resize-none py-3 min-h-[44px] max-h-[200px] scrollbar-none disabled:opacity-50 text-base"
             rows="1"
         ></textarea>

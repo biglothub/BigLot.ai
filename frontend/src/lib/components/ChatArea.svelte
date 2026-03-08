@@ -11,6 +11,8 @@
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import Markdown from "./Markdown.svelte";
+    import ContentBlockRenderer from "./blocks/ContentBlockRenderer.svelte";
+    import ToolProgress from "./blocks/ToolProgress.svelte";
 
     let copiedIndex = $state<number | null>(null);
     const modeLabel: Record<string, string> = {
@@ -48,11 +50,13 @@
     }
 
     $effect(() => {
-        // Track both message count and the last message content so streaming updates
+        // Track message count, last content, and content blocks so streaming updates
         // keep the view pinned only when the user hasn't scrolled away.
         const n = chatState.messages.length;
         const last = n > 0 ? chatState.messages[n - 1]?.content ?? "" : "";
+        const lastBlocks = n > 0 ? chatState.messages[n - 1]?.contentBlocks?.length ?? 0 : 0;
         void last;
+        void lastBlocks;
         void maybeAutoScroll();
     });
 </script>
@@ -135,7 +139,17 @@
                             {/if}
 
                             {#if message.role === "assistant"}
-                                <Markdown content={message.content} />
+                                {#if message.contentBlocks?.length}
+                                    {#each message.contentBlocks as block}
+                                        <ContentBlockRenderer {block} />
+                                    {/each}
+                                {/if}
+                                {#if message.content}
+                                    <Markdown content={message.content} />
+                                {/if}
+                                {#if message.toolCalls?.some((t) => t.status === "running")}
+                                    <ToolProgress tools={message.toolCalls} />
+                                {/if}
                             {:else}
                                 <div class="whitespace-pre-wrap break-words">
                                     {message.content}
