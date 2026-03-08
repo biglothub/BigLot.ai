@@ -360,11 +360,14 @@ registerTool({
 	},
 	timeout: 20_000,
 	execute: async (args): Promise<ToolResult> => {
-		const symbol = normalizeSymbol(String(args.symbol || 'BTCUSDT'));
+		const rawSymbol = String(args.symbol || 'BTCUSDT');
 		const interval = normalizeInterval(String(args.interval || '1d'));
 		const indicators = Array.isArray(args.indicators)
 			? (args.indicators as string[])
 			: ['rsi', 'sma_20', 'sma_50'];
+
+		const isForex = isForexOrCommodity(rawSymbol);
+		const symbol = isForex ? rawSymbol.toUpperCase().replace(/[^A-Z]/g, '') : normalizeSymbol(rawSymbol);
 
 		const cacheKey = toolCache.generateKey('get_technical_analysis', {
 			symbol,
@@ -374,34 +377,57 @@ registerTool({
 		const cached = toolCache.get<ToolResult>(cacheKey);
 		if (cached) return cached;
 
-		// Fetch enough data for calculations (200 extra for SMA200)
-		const limit = 300;
-		const url = `${BINANCE_BASE}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-		const response = await fetch(url);
+		let ohlcv: OHLCV[];
 
-		if (!response.ok) {
-			return {
-				success: false,
-				contentBlocks: [
-					{
-						type: 'error',
-						message: `Failed to fetch data for ${symbol}`,
-						tool: 'get_technical_analysis'
-					}
-				],
-				textSummary: `Error: Could not fetch data for ${symbol}.`
-			};
+		if (isForex) {
+			// Fetch from Yahoo Finance for forex/commodities
+			const yahooResult = await fetchYahooOHLCV(rawSymbol, interval, 300);
+			if ('error' in yahooResult) {
+				return {
+					success: false,
+					contentBlocks: [{ type: 'error', message: yahooResult.error, tool: 'get_technical_analysis' }],
+					textSummary: `Error: ${yahooResult.error}`
+				};
+			}
+			ohlcv = yahooResult.ohlcv;
+		} else {
+			// Fetch from Binance for crypto
+			const limit = 300;
+			const url = `${BINANCE_BASE}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+			const response = await fetch(url);
+
+			if (!response.ok) {
+				return {
+					success: false,
+					contentBlocks: [
+						{
+							type: 'error',
+							message: `Failed to fetch data for ${symbol}`,
+							tool: 'get_technical_analysis'
+						}
+					],
+					textSummary: `Error: Could not fetch data for ${symbol}.`
+				};
+			}
+
+			const rawData = await response.json();
+			ohlcv = (rawData as number[][]).map((k: number[]) => ({
+				time: Math.floor(k[0] / 1000),
+				open: parseFloat(String(k[1])),
+				high: parseFloat(String(k[2])),
+				low: parseFloat(String(k[3])),
+				close: parseFloat(String(k[4])),
+				volume: parseFloat(String(k[5]))
+			}));
 		}
 
-		const rawData = await response.json();
-		const ohlcv: OHLCV[] = (rawData as number[][]).map((k: number[]) => ({
-			time: Math.floor(k[0] / 1000),
-			open: parseFloat(String(k[1])),
-			high: parseFloat(String(k[2])),
-			low: parseFloat(String(k[3])),
-			close: parseFloat(String(k[4])),
-			volume: parseFloat(String(k[5]))
-		}));
+		if (ohlcv.length === 0) {
+			return {
+				success: false,
+				contentBlocks: [{ type: 'error', message: `No data available for ${symbol}`, tool: 'get_technical_analysis' }],
+				textSummary: `Error: No data for ${symbol}.`
+			};
+		}
 
 		const closes = ohlcv.map((c) => c.close);
 		const times = ohlcv.map((c) => c.time);
