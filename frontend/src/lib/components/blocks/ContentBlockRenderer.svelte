@@ -9,6 +9,9 @@
     import NewsList from "./NewsList.svelte";
     import ErrorBlock from "./ErrorBlock.svelte";
     import PlanBlock from "./PlanBlock.svelte";
+    import GaugeBlock from "./GaugeBlock.svelte";
+    import HeatmapBlock from "./HeatmapBlock.svelte";
+    import TradeSetupBlock from "./TradeSetupBlock.svelte";
 
     let { block }: { block: ContentBlock } = $props();
 </script>
@@ -37,4 +40,10 @@
     <ErrorBlock message={block.message} tool={block.tool} />
 {:else if block.type === "plan"}
     <PlanBlock plan={block} />
+{:else if block.type === "gauge"}
+    <GaugeBlock type="gauge" title={block.title} value={block.value} label={block.label} thresholds={block.thresholds} />
+{:else if block.type === "heatmap"}
+    <HeatmapBlock type="heatmap" title={block.title} assets={block.assets} timeframes={block.timeframes} data={block.data} colorScale={block.colorScale} />
+{:else if block.type === "trade_setup"}
+    <TradeSetupBlock type="trade_setup" asset={block.asset} direction={block.direction} thesis={block.thesis} entryZone={block.entryZone} stopLoss={block.stopLoss} targets={block.targets} riskRewardRatio={block.riskRewardRatio} maxRiskPct={block.maxRiskPct} invalidation={block.invalidation} timeframe={block.timeframe} />
 {/if}

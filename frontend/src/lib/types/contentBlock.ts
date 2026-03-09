@@ -111,6 +111,43 @@ export type PlanBlock = {
 	updatedAt: number;
 };
 
+// --- Gauge Block (arc speedometer — COT positioning, RSI sentiment) ---
+
+export type GaugeBlock = {
+	type: 'gauge';
+	title: string;
+	value: number;   // 0–100
+	label: string;   // e.g. "Extreme Long"
+	thresholds: { value: number; color: string; label: string }[];
+};
+
+// --- Heatmap Block (multi-asset performance table) ---
+
+export type HeatmapBlock = {
+	type: 'heatmap';
+	title: string;
+	assets: string[];      // column headers
+	timeframes: string[];  // row headers
+	data: number[][];      // performance % [timeframe][asset]
+	colorScale: 'redgreen' | 'goldblue';
+};
+
+// --- Trade Setup Block (institutional-grade trade plan) ---
+
+export type TradeSetupBlock = {
+	type: 'trade_setup';
+	asset: string;
+	direction: 'long' | 'short';
+	thesis: string;
+	entryZone: { low: number; high: number };
+	stopLoss: number;
+	targets: { price: number; label: string; rMultiple: number }[];
+	riskRewardRatio: number;
+	maxRiskPct: number;
+	invalidation: string;
+	timeframe: string;
+};
+
 export type ContentBlock =
 	| TextBlock
 	| ImageBlock
@@ -120,7 +157,10 @@ export type ContentBlock =
 	| NewsListBlock
 	| EmbedBlock
 	| ErrorBlock
-	| PlanBlock;
+	| PlanBlock
+	| GaugeBlock
+	| HeatmapBlock
+	| TradeSetupBlock;
 
 export type ContentBlockType = ContentBlock['type'];
 
