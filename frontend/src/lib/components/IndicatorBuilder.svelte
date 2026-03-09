@@ -1714,14 +1714,16 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .cockpit-panel {
         position: relative;
         overflow: hidden;
-        border-radius: 24px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
         background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
-            rgba(4, 4, 4, 0.92);
+            linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01) 60%, transparent),
+            rgba(8, 8, 8, 0.88);
+        backdrop-filter: blur(8px);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.04),
-            0 24px 80px rgba(0, 0, 0, 0.32);
+            0 1px 2px rgba(0, 0, 0, 0.2),
+            0 8px 32px rgba(0, 0, 0, 0.24);
     }
 
     .cockpit-panel::before {
@@ -1731,9 +1733,9 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         height: 1px;
         background: linear-gradient(
             90deg,
-            transparent,
-            rgba(245, 158, 11, 0.55),
-            transparent
+            transparent 10%,
+            rgba(245, 158, 11, 0.4) 50%,
+            transparent 90%
         );
         pointer-events: none;
     }
