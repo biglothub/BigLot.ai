@@ -2094,16 +2094,18 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 0.45rem;
-        padding: 0.72rem 0.95rem;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 0.4rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
         background: rgba(255, 255, 255, 0.03);
-        color: rgba(255, 255, 255, 0.74);
-        font-size: 0.8rem;
-        font-weight: 600;
+        color: rgba(255, 255, 255, 0.65);
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.005em;
         cursor: pointer;
-        transition: all 0.18s ease;
+        transition: all 0.2s ease;
     }
 
     .control-btn:hover:not(:disabled) {
@@ -2320,14 +2322,17 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
 
     .code-panel {
         margin: 0;
-        padding: 1rem;
+        padding: 1rem 1.1rem;
         max-height: 720px;
         overflow: auto;
-        border-radius: 18px;
-        background: #070707;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        color: #d1d5db;
-        font-size: 0.78rem;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        color: #cbd5e1;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.76rem;
+        line-height: 1.7;
+        letter-spacing: -0.01em;
     }
 
     .table-shell {
