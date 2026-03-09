@@ -66,6 +66,18 @@ class IndicatorBuilderState {
             // Hide reference and AI details
             const refLog = this.createSystemLog('BigLot.ai expert analysis complete');
 
+            // Show retry info if retries were needed
+            const retryLogs: IndicatorActivityLog[] = [];
+            if (data.retryCount > 0) {
+                retryLogs.push(this.createSystemLog(`Auto-corrected ${data.retryCount} time(s) via validation`));
+            }
+            if (data.validationErrors?.length > 0) {
+                const warnings = data.validationErrors.filter((e: any) => e.severity === 'warning');
+                if (warnings.length > 0) {
+                    retryLogs.push(this.createSystemLog(`${warnings.length} warning(s) remaining — review recommended`));
+                }
+            }
+
             if (data.code) {
                 this.progress = {
                     status: 'ready',
@@ -76,6 +88,7 @@ class IndicatorBuilderState {
                     activityLog: [
                         ...(this.progress.activityLog ?? []),
                         refLog,
+                        ...retryLogs,
                         this.createSystemLog(`Indicator generated successfully`)
                     ]
                 };

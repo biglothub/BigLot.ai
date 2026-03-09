@@ -31,15 +31,17 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
     }
 
     try {
-        const result = await generateIndicator(prompt);
+        // Post-processing pipeline passed to generator for retry validation
+        const postProcess = (code: string) => {
+            let processed = normalizePineToV6(code);
+            processed = validateAndFixPineScript(processed);
+            return processed;
+        };
 
-        // Post-process PineScript
-        let finalCode = result.code;
-        if (finalCode) {
-            finalCode = normalizePineToV6(finalCode);
-            finalCode = validateAndFixPineScript(finalCode);
-        }
+        const result = await generateIndicator(prompt, { postProcess });
 
+        // Final code is already post-processed by the retry loop
+        const finalCode = result.code;
         let finalPreviewCode = result.previewCode ? stripCodeFences(result.previewCode) : null;
 
         // Parse config from PineScript
@@ -62,7 +64,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
             textOutput: result.textOutput,
             config,
             referenceUsed: result.referenceUsed,
-            model: result.model
+            model: result.model,
+            retryCount: result.retryCount,
+            validationErrors: result.validationErrors
         });
     } catch (err: any) {
         console.error('GPT Indicator generation error:', err);
@@ -222,6 +226,9 @@ function validateAndFixPineScript(code: string): string {
         'sum(': 'math.sum(',
         // string functions
         'tostring(': 'str.tostring(',
+        // legacy v4/v5 functions
+        'security(': 'request.security(',
+        'study(': 'indicator(',
     };
 
     for (const [legacy, modern] of Object.entries(legacyFnMap)) {
@@ -238,8 +245,18 @@ function validateAndFixPineScript(code: string): string {
         fixed = `//@version=6\n${filtered.join('\n')}`;
     }
 
-    // 3. Fix bare color() constructor → color.rgb()
-    fixed = fixed.replace(/(?<!\.)(?<!\w)color\s*\(\s*(\d)/g, 'color.rgb($1');
+    // 3. Fix bare color() constructor → color.rgb() (support multi-digit args)
+    fixed = fixed.replace(/(?<!\.)(?<!\w)color\s*\(\s*(\d+)/g, 'color.rgb($1');
+
+    // 4. Fix bare input() without type qualifier → infer from default value
+    fixed = fixed.replace(/(?<!\.)(?<!\w)input\s*\(\s*([\d]+)\s*,/g, 'input.int($1,');
+    fixed = fixed.replace(/(?<!\.)(?<!\w)input\s*\(\s*([\d]+\.[\d]+)\s*,/g, 'input.float($1,');
+    fixed = fixed.replace(/(?<!\.)(?<!\w)input\s*\(\s*(true|false)\s*,/g, 'input.bool($1,');
+
+    // 5. Strip strategy.* calls when used with indicator() (common LLM error)
+    if (/\bindicator\s*\(/.test(fixed)) {
+        fixed = fixed.replace(/^\s*strategy\.\w+\s*\(.*\)\s*$/gm, '');
+    }
 
     return fixed;
 }

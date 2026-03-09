@@ -1116,7 +1116,7 @@ export function findBestReference(prompt: string): { match: ReferenceIndicator |
     scored.sort((a, b) => b.score - a.score);
 
     const best = scored[0];
-    const threshold = 0.05; // Minimum relevance threshold
+    const threshold = 0.15; // Minimum relevance threshold
 
     return {
         match: best && best.score >= threshold ? best.ref : null,
@@ -1156,6 +1156,38 @@ REQUIRED STRUCTURE:
 2. Accurate JavaScript Simulation (preview.js) — for web-based visualization.
 
 Ensure maximum reliability, clear parameter names, and advanced visual styling.`;
+}
+
+/**
+ * Build a restrictive template prompt for high-confidence matches (score >= 0.50).
+ * The LLM should ONLY customize title, params, colors — NOT rewrite logic.
+ */
+export function buildTemplatePrompt(userPrompt: string, reference: ReferenceIndicator): string {
+    return `As an elite PineScript v6 Engineer, fulfill this request:
+
+"${userPrompt}"
+
+TEMPLATE CODE (from ${reference.author} — "${reference.name}"):
+This code is VERIFIED and ERROR-FREE. Return it with MINIMAL modifications.
+
+\`\`\`pine
+${reference.code}
+\`\`\`
+
+STRICT RULES — You must follow ALL of these:
+1. Return this EXACT code with only these allowed changes:
+   - Update the indicator title to match the user's request
+   - Adjust input default values if the user specified different parameters
+   - Change colors if the user requested specific colors
+   - Add or remove specific features ONLY if the user explicitly asked
+2. Do NOT rewrite the calculation logic
+3. Do NOT change the plot structure or move plots
+4. Do NOT rename variables unnecessarily
+5. Keep ALL namespacing (ta.*, math.*), global-scope plots, nz()/na() checks
+6. Output the final PineScript in a \`\`\`pine code block
+7. Also output a matching JavaScript preview in a \`\`\`javascript code block
+
+The goal is MAXIMUM RELIABILITY — this template is already tested and working.`;
 }
 
 /**

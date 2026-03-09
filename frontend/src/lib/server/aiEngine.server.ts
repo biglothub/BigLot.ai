@@ -4,8 +4,9 @@
  * 
  * Uses advanced AI logic for synchronous indicator generation.
  */
-import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt } from '$lib/pinescriptLibrary';
+import { findBestReference, buildReferenceEnhancedPrompt, buildSearchPrompt, buildTemplatePrompt } from '$lib/pinescriptLibrary';
 import { getClientForModel, resolveDefaultAIModel, type AIModel } from '$lib/server/aiProvider.server';
+import { validatePineScript, type PineValidationError } from '$lib/server/pineValidator';
 
 // ─── GPT Model Options ───
 export type GPTModel = AIModel;
@@ -77,6 +78,33 @@ COMMON PINESCRIPT ERRORS YOU MUST AVOID:
 
 - WARNING: Repainting issues.
   FIX: Avoid using request.security() with lookahead=barmerge.lookahead_on unless intentional. Use barstate.isconfirmed for signal confirmation.
+
+CORRECT COMPLETE EXAMPLE (use this as your formatting reference):
+\`\`\`pine
+//@version=6
+indicator("RSI with Levels", overlay=false)
+
+// Inputs — ALWAYS at global scope
+length = input.int(14, "RSI Length", minval=1, maxval=100)
+src = input.source(close, "Source")
+obLevel = input.int(70, "Overbought", minval=50, maxval=100)
+osLevel = input.int(30, "Oversold", minval=0, maxval=50)
+
+// Calculation
+rsiVal = ta.rsi(src, length)
+
+// Plotting — ALWAYS at global scope, use conditional values for dynamic behavior
+overbought = hline(obLevel, "Overbought", color=color.new(color.red, 50))
+oversold = hline(osLevel, "Oversold", color=color.new(color.green, 50))
+fill(overbought, oversold, color=color.new(color.blue, 90))
+plot(rsiVal, "RSI", color=color.blue, linewidth=2)
+
+// Signals — calculate in variables, plot at global scope
+buySignal = ta.crossover(rsiVal, osLevel)
+sellSignal = ta.crossunder(rsiVal, obLevel)
+plotshape(buySignal, "Buy", shape.triangleup, location.bottom, color.green, size=size.small)
+plotshape(sellSignal, "Sell", shape.triangledown, location.top, color.red, size=size.small)
+\`\`\`
 `;
 
 // ─── INDICATOR GENERATION ───
@@ -87,28 +115,38 @@ export type GenerateIndicatorResult = {
   textOutput: string;
   referenceUsed: string | null;
   model: string;
+  retryCount: number;
+  validationErrors: PineValidationError[];
 };
 
 /**
  * Generate an indicator from a user prompt using OpenAI/DeepSeek.
- * Returns the result directly — no polling needed.
+ * Includes automatic retry (up to 2x) when validation fails.
  */
 export async function generateIndicator(
   prompt: string,
   options?: {
     model?: GPTModel;
+    postProcess?: (code: string) => string;
   }
 ): Promise<GenerateIndicatorResult> {
   const model = options?.model ?? resolveDefaultAIModel();
   const { client, apiModel, provider } = getClientForModel(model);
+  const MAX_RETRIES = 2;
 
-  // ─── REFERENCE MATCHING ENGINE ───
+  // ─── REFERENCE MATCHING ENGINE (3-tier) ───
   let finalPrompt: string;
   let referenceUsed: string | null = null;
 
   const { match, score, allMatches } = findBestReference(prompt);
 
-  if (match && score >= 0.05) {
+  if (match && score >= 0.50) {
+    // High-confidence match → template mode (minimal changes only)
+    console.log(`[BigLot.ai] Template match: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
+    finalPrompt = buildTemplatePrompt(prompt, match);
+    referenceUsed = `${match.name} by ${match.author}`;
+  } else if (match && score >= 0.15) {
+    // Moderate match → reference-enhanced mode
     console.log(`[BigLot.ai] Reference matched: "${match.name}" (score: ${(score * 100).toFixed(0)}%) by ${match.author}`);
     if (allMatches.length > 1) {
       console.log(`[BigLot.ai] Other candidates: ${allMatches.slice(1).map(m => `"${m.ref.name}" (${(m.score * 100).toFixed(0)}%)`).join(', ')}`);
@@ -120,35 +158,104 @@ export async function generateIndicator(
     finalPrompt = buildSearchPrompt(prompt);
   }
 
-  // ─── CALL GPT ───
-  console.log(`[BigLot.ai] Generating indicator with ${model} (${provider})...`);
-  const startTime = Date.now();
+  // ─── GENERATION WITH RETRY LOOP ───
+  let lastCode: string | null = null;
+  let lastJsCode: string | null = null;
+  let lastTextOutput = '';
+  let lastErrors: PineValidationError[] = [];
+  let retryCount = 0;
 
-  const completion = await client.chat.completions.create({
-    model: apiModel,
-    messages: [
-      { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
-      { role: 'user', content: finalPrompt }
-    ],
-    temperature: 0.3,
-    max_tokens: 8192,
-  });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const isRetry = attempt > 0;
+    const temperature = isRetry ? 0.05 : 0.1;
+    const currentPrompt = isRetry
+      ? buildRetryPrompt(finalPrompt, lastCode!, lastErrors)
+      : finalPrompt;
 
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[BigLot.ai] GPT response received in ${elapsed}s (${model})`);
+    console.log(`[BigLot.ai] ${isRetry ? `Retry #${attempt}` : 'Generating'} indicator with ${model} (${provider})...`);
+    const startTime = Date.now();
 
-  const textOutput = completion.choices[0]?.message?.content ?? '';
+    const completion = await client.chat.completions.create({
+      model: apiModel,
+      messages: [
+        { role: 'system', content: INDICATOR_SYSTEM_INSTRUCTION },
+        { role: 'user', content: currentPrompt }
+      ],
+      temperature,
+      max_tokens: 8192,
+    });
 
-  // ─── EXTRACT CODE BLOCKS ───
-  const { pineCode, jsCode } = extractCodeBlocks(textOutput);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[BigLot.ai] GPT response received in ${elapsed}s (${model})`);
+
+    lastTextOutput = completion.choices[0]?.message?.content ?? '';
+    const { pineCode, jsCode } = extractCodeBlocks(lastTextOutput);
+    lastCode = pineCode;
+    lastJsCode = jsCode ?? lastJsCode; // Keep previous JS if new one is null
+
+    if (!lastCode) {
+      // No code block extracted — skip validation, return as-is
+      break;
+    }
+
+    // Apply post-processing (normalization + auto-fix) before validation
+    if (options?.postProcess) {
+      lastCode = options.postProcess(lastCode);
+    }
+
+    // Validate
+    const validation = validatePineScript(lastCode);
+    lastErrors = validation.errors;
+
+    if (validation.valid) {
+      console.log(`[BigLot.ai] Validation passed${isRetry ? ` (after ${attempt} retry)` : ''}`);
+      break;
+    }
+
+    const errorCount = lastErrors.filter(e => e.severity === 'error').length;
+    if (attempt < MAX_RETRIES) {
+      console.log(`[BigLot.ai] Validation failed (${errorCount} errors) — retrying...`);
+      retryCount = attempt + 1;
+    } else {
+      console.log(`[BigLot.ai] Validation failed after ${MAX_RETRIES} retries (${errorCount} errors) — returning best effort`);
+    }
+  }
 
   return {
-    code: pineCode,
-    previewCode: jsCode,
-    textOutput,
+    code: lastCode,
+    previewCode: lastJsCode,
+    textOutput: lastTextOutput,
     referenceUsed,
-    model
+    model,
+    retryCount,
+    validationErrors: lastErrors
   };
+}
+
+/**
+ * Build a retry prompt that includes the broken code and error details
+ */
+function buildRetryPrompt(originalPrompt: string, brokenCode: string, errors: PineValidationError[]): string {
+  const errorList = errors
+    .filter(e => e.severity === 'error')
+    .map((e, i) => `${i + 1}. ${e.line > 0 ? `Line ${e.line}: ` : ''}${e.message}`)
+    .join('\n');
+
+  return `${originalPrompt}
+
+⚠️ YOUR PREVIOUS CODE HAD ERRORS. Fix ALL of them:
+
+${errorList}
+
+BROKEN CODE:
+\`\`\`pine
+${brokenCode}
+\`\`\`
+
+Fix ALL the errors above and return the CORRECTED PineScript and JavaScript preview.
+Remember: ALL plot/hline/fill/bgcolor/plotshape calls MUST be at global scope.
+ALL input() calls MUST be at global scope.
+Use only valid PineScript v6 namespaced functions.`;
 }
 
 /**
