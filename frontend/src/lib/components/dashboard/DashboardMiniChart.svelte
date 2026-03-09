@@ -1,7 +1,15 @@
 <script lang="ts">
     import type { OHLCV } from '$lib/types/contentBlock';
 
-    let { ohlcv, interval }: { ohlcv: OHLCV[] | null; interval?: string } = $props();
+    let {
+        ohlcv,
+        interval,
+        showHeader = true
+    }: {
+        ohlcv: OHLCV[] | null;
+        interval?: string;
+        showHeader?: boolean;
+    } = $props();
 
     // Simple SVG candlestick chart (no external dep)
     const svgW = 600;
@@ -45,12 +53,14 @@
 
 <div class="mini-chart-wrap">
     {#if ohlcv && ohlcv.length > 0 && layout}
-        <div class="mini-chart-header">
-            <span class="mini-chart-title">GC=F Gold Futures</span>
-            {#if interval}
-                <span class="mini-chart-interval">{interval}</span>
-            {/if}
-        </div>
+        {#if showHeader}
+            <div class="mini-chart-header">
+                <span class="mini-chart-title">GC=F Gold Futures</span>
+                {#if interval}
+                    <span class="mini-chart-interval">{interval}</span>
+                {/if}
+            </div>
+        {/if}
         <svg
             viewBox="0 0 {svgW} {svgH}"
             class="mini-chart-svg"
