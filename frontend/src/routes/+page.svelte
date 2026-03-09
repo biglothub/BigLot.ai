@@ -4,6 +4,7 @@
     import InputArea from "$lib/components/InputArea.svelte";
     import { chatState, type AgentMode } from "$lib/state/chat.svelte";
     import AgentOrb from "$lib/components/AgentOrb.svelte";
+    import WatchlistBar from "$lib/components/WatchlistBar.svelte";
     import { fade } from "svelte/transition";
 
     let sidebarOpen = $state(true);
@@ -62,6 +63,9 @@
                 />
             </div>
         </header>
+
+        <!-- Live Market Watchlist Bar -->
+        <WatchlistBar />
 
         {#if chatState.currentChatId === null && chatState.messages.length === 0}
             <!-- Empty State / Home Page -->
