@@ -2,7 +2,7 @@ import { supabase } from '$lib/supabase';
 import { parseSSEStream } from '$lib/utils/sseParser';
 import type { ContentBlock, ToolCallStatus, PlanBlock } from '$lib/types/contentBlock';
 
-export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript';
+export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript' | 'gold' | 'macro' | 'portfolio';
 export type ChatMode = 'normal' | 'agent';
 export type ChatChannel = 'web' | 'telegram';
 
@@ -77,7 +77,7 @@ class ChatState {
         if (typeof localStorage === 'undefined') return;
 
         const savedMode = localStorage.getItem(ChatState.AGENT_MODE_STORAGE_KEY);
-        if (savedMode === 'coach' || savedMode === 'recovery' || savedMode === 'analyst' || savedMode === 'pinescript') {
+        if (savedMode === 'coach' || savedMode === 'recovery' || savedMode === 'analyst' || savedMode === 'pinescript' || savedMode === 'gold' || savedMode === 'macro' || savedMode === 'portfolio') {
             this.agentMode = savedMode;
         }
 
@@ -294,7 +294,7 @@ class ChatState {
                     image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
                     channel: row.channel === 'web' || row.channel === 'telegram' ? row.channel : undefined,
                     mode:
-                        row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript'
+                        row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript' || row.mode === 'gold' || row.mode === 'macro' || row.mode === 'portfolio'
                             ? row.mode
                             : undefined
                 };

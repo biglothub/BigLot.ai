@@ -34,13 +34,24 @@ export function isForexOrCommodity(symbol: string): boolean {
 	return false;
 }
 
+// Direct commodity/index symbol overrides (Yahoo Finance futures/index tickers)
+const COMMODITY_OVERRIDES: Record<string, string> = {
+	XAUUSD: 'GC=F',   // Gold COMEX futures
+	XAGUSD: 'SI=F',   // Silver COMEX futures
+	XPTUSD: 'PL=F',   // Platinum futures
+	XPDUSD: 'PA=F',   // Palladium futures
+	WTIUSD: 'CL=F',   // WTI Crude Oil
+	USOIL:  'CL=F',
+	BRENT:  'BZ=F',   // Brent Crude
+};
+
 /**
  * Convert a symbol to Yahoo Finance format
- * XAUUSD -> XAUUSD=X, EURUSD -> EURUSD=X
+ * XAUUSD -> GC=F (futures override), EURUSD -> EURUSD=X
  */
 export function toYahooSymbol(symbol: string): string {
 	const s = symbol.toUpperCase().replace(/[^A-Z]/g, '');
-	return `${s}=X`;
+	return COMMODITY_OVERRIDES[s] ?? `${s}=X`;
 }
 
 /**

@@ -11,6 +11,10 @@ import { getOpenAIToolSchemas, executeTool, getTool } from './tools/registry';
 import './tools/marketData.tool';
 import './tools/charts.tool';
 import './tools/planning.tool';
+import './tools/gold.tool';
+import './tools/macro.tool';
+import './tools/cot.tool';
+import './tools/crossAsset.tool';
 
 export type AgentCallbacks = {
 	onTextDelta: (text: string) => void;

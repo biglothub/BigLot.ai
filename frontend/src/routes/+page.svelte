@@ -39,10 +39,17 @@
                         )}
                     title="Assistant mode"
                 >
-                    <option value="coach">Coach</option>
-                    <option value="recovery">Recovery</option>
-                    <option value="analyst">Market Analyst</option>
-                    <option value="pinescript">PineScript Engineer</option>
+                    <optgroup label="General">
+                        <option value="coach">Coach</option>
+                        <option value="recovery">Recovery</option>
+                        <option value="analyst">Market Analyst</option>
+                        <option value="pinescript">PineScript Engineer</option>
+                    </optgroup>
+                    <optgroup label="Gold & Macro">
+                        <option value="gold">Gold Specialist</option>
+                        <option value="macro">Macro Analyst</option>
+                        <option value="portfolio">Portfolio Manager</option>
+                    </optgroup>
                 </select>
 
             </div>
