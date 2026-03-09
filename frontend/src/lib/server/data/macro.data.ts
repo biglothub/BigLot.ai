@@ -15,7 +15,7 @@ export interface QuoteData {
 
 export async function fetchYahooQuote(yahooSymbol: string): Promise<QuoteData | null> {
 	try {
-		const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=2d&interval=1d`;
+		const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?range=2d&interval=1d`;
 		const res = await fetch(url, { headers: YAHOO_HEADERS });
 		if (!res.ok) return null;
 

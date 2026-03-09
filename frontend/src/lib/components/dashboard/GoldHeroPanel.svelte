@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { GoldPriceData } from '$lib/server/data/gold.data';
+    import type { GoldPriceData } from '$lib/types/dashboardMeta';
 
     let { gold }: { gold: GoldPriceData | null } = $props();
 
