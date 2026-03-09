@@ -133,6 +133,21 @@
         </a>
 
         <a
+            href="/dashboard"
+            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500/10 to-yellow-500/10 hover:from-amber-500/20 hover:to-yellow-500/20 text-foreground/80 hover:text-amber-300 border border-white/5 hover:border-amber-500/20 rounded-lg transition-all duration-200 group"
+        >
+            <BarChart3
+                size={18}
+                class="text-amber-400 group-hover:text-amber-300 transition-colors"
+            />
+            <span class="font-semibold text-sm">Gold Dashboard</span>
+            <span
+                class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400 font-bold"
+                >LIVE</span
+            >
+        </a>
+
+        <a
             href="/analytics"
             class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500/10 to-purple-500/10 hover:from-blue-500/20 hover:to-purple-500/20 text-foreground/80 hover:text-blue-300 border border-white/5 hover:border-blue-500/20 rounded-lg transition-all duration-200 group"
         >
