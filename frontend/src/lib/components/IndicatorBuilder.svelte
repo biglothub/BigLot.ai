@@ -1758,25 +1758,28 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .panel-label {
-        font-size: 0.64rem;
-        font-weight: 700;
-        letter-spacing: 0.18em;
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.6rem;
+        font-weight: 600;
+        letter-spacing: 0.2em;
         text-transform: uppercase;
-        color: rgba(245, 158, 11, 0.78);
+        color: rgba(245, 158, 11, 0.65);
     }
 
     .panel-tag {
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.34rem 0.65rem;
+        gap: 0.35rem;
+        padding: 0.3rem 0.6rem;
         border-radius: 999px;
-        border: 1px solid rgba(245, 158, 11, 0.18);
-        background: rgba(245, 158, 11, 0.08);
-        color: #f59e0b;
-        font-size: 0.7rem;
+        border: 1px solid rgba(245, 158, 11, 0.14);
+        background: rgba(245, 158, 11, 0.06);
+        color: rgba(245, 158, 11, 0.85);
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.66rem;
         font-weight: 600;
         white-space: nowrap;
+        letter-spacing: 0.01em;
     }
 
     .tag-success {
@@ -1818,8 +1821,12 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .library-head h2,
     .shortcut-head h3 {
         margin: 0;
-        font-size: 1.08rem;
-        color: #f8fafc;
+        font-family: 'Outfit', system-ui, sans-serif;
+        font-size: 1.12rem;
+        font-weight: 700;
+        color: #f1f5f9;
+        letter-spacing: -0.015em;
+        line-height: 1.25;
     }
 
     .compose-head p,
@@ -1827,10 +1834,12 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .console-head p,
     .library-head p,
     .shortcut-head p {
-        margin: 0.35rem 0 0;
-        font-size: 0.84rem;
-        color: rgba(255, 255, 255, 0.54);
-        line-height: 1.55;
+        margin: 0.4rem 0 0;
+        font-size: 0.82rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.45);
+        line-height: 1.6;
+        letter-spacing: 0.005em;
     }
 
     .compose-icon {
@@ -1853,26 +1862,30 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         width: 100%;
         min-height: 220px;
         resize: vertical;
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
         background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
-            rgba(10, 10, 10, 0.72);
-        padding: 1rem 1rem 0.95rem;
-        color: #f8fafc;
-        font-size: 0.94rem;
-        line-height: 1.6;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+            rgba(0, 0, 0, 0.5);
+        padding: 1rem 1.1rem;
+        color: #e2e8f0;
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.88rem;
+        font-weight: 400;
+        line-height: 1.7;
+        letter-spacing: 0.005em;
+        transition: border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
     .compose-field textarea:focus {
         outline: none;
-        border-color: rgba(245, 158, 11, 0.35);
-        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.08);
+        border-color: rgba(245, 158, 11, 0.3);
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.06), 0 0 20px rgba(245, 158, 11, 0.04);
     }
 
     .compose-field textarea::placeholder {
-        color: rgba(255, 255, 255, 0.34);
+        color: rgba(255, 255, 255, 0.25);
+        font-weight: 400;
     }
 
     .compose-field textarea:disabled {
@@ -1906,18 +1919,21 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .guidance-title {
         display: block;
         margin-bottom: 0.45rem;
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.16em;
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
         text-transform: uppercase;
-        color: rgba(245, 158, 11, 0.72);
+        color: rgba(245, 158, 11, 0.6);
     }
 
     .guidance-card p {
         margin: 0;
-        font-size: 0.78rem;
-        color: rgba(255, 255, 255, 0.56);
-        line-height: 1.5;
+        font-size: 0.76rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.44);
+        line-height: 1.55;
+        letter-spacing: 0.005em;
     }
 
     .template-deck {
@@ -1934,11 +1950,12 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .template-group-label {
-        font-size: 0.7rem;
-        font-weight: 700;
+        font-family: 'Outfit', system-ui, sans-serif;
+        font-size: 0.68rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.15em;
-        color: rgba(255, 255, 255, 0.44);
+        letter-spacing: 0.14em;
+        color: rgba(255, 255, 255, 0.36);
     }
 
     .template-chip-list {
