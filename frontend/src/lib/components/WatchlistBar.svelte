@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
+    import AgentOrb from './AgentOrb.svelte';
 
     type WatchlistItem = {
         symbol: string;
@@ -54,40 +55,67 @@
 <div class="watchlist-bar" aria-label="Live market watchlist">
     {#if loading}
         <div class="wl-loading">Loading markets...</div>
-    {:else}
-        {#each items as item (item.symbol)}
-            {@const isUp = item.change >= 0}
-            {@const isGold = GOLD_SYMBOLS.has(item.symbol)}
-            <div class="wl-item" class:wl-gold={isGold}>
-                <span class="wl-label" class:wl-label-gold={isGold}>{item.label}</span>
-                <span class="wl-price">{fmtPrice(item)}</span>
-                <span class="wl-change" class:wl-up={isUp} class:wl-down={!isUp}>
-                    {fmtChange(item.change)}
-                </span>
-            </div>
-        {/each}
+    {:else if items.length > 0}
+        <div class="ticker-track">
+            {#each [0, 1, 2, 3] as _copy}
+                <div class="ticker-content">
+                    {#each items as item (item.symbol)}
+                        {@const isUp = item.change >= 0}
+                        {@const isGold = GOLD_SYMBOLS.has(item.symbol)}
+                        <div class="wl-item" class:wl-gold={isGold}>
+                            <span class="wl-label" class:wl-label-gold={isGold}>{item.label}</span>
+                            <span class="wl-price">{fmtPrice(item)}</span>
+                            <span class="wl-change" class:wl-up={isUp} class:wl-down={!isUp}>
+                                {fmtChange(item.change)}
+                            </span>
+                        </div>
+                    {/each}
+                    <span class="ticker-dot"><AgentOrb size="sm" showLabel={false} /></span>
+                </div>
+            {/each}
+        </div>
     {/if}
 </div>
 
 <style>
     .watchlist-bar {
-        display: flex;
-        align-items: center;
-        gap: 0;
-        overflow-x: auto;
-        scrollbar-width: none;
+        overflow: hidden;
         background: rgba(0, 0, 0, 0.25);
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        padding: 0 0.5rem;
         min-height: 32px;
         flex-shrink: 0;
     }
-    .watchlist-bar::-webkit-scrollbar { display: none; }
 
     .wl-loading {
         font-size: 0.65rem;
         color: rgba(255,255,255,0.3);
         padding: 0 0.75rem;
+        line-height: 32px;
+    }
+
+    .ticker-track {
+        display: flex;
+        width: max-content;
+        animation: wl-scroll 35s linear infinite;
+    }
+    .ticker-track:hover {
+        animation-play-state: paused;
+    }
+    @keyframes wl-scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-25%); }
+    }
+    .ticker-content {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+    .ticker-dot {
+        display: flex;
+        align-items: center;
+        padding: 0 1rem;
+        color: rgba(255, 255, 255, 0.12);
+        font-size: 0.5rem;
     }
 
     .wl-item {
@@ -100,7 +128,6 @@
         flex-shrink: 0;
         height: 32px;
     }
-    .wl-item:last-child { border-right: none; }
 
     .wl-gold {
         background: rgba(245, 158, 11, 0.04);

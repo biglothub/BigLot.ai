@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type { MacroData } from '$lib/server/data/macro.data';
+    import type { MacroData } from '$lib/types/dashboardMeta';
+    import AgentOrb from '$lib/components/AgentOrb.svelte';
 
     let { macro }: { macro: MacroData | null } = $props();
 
@@ -16,48 +17,57 @@
 
 <div class="macro-strip">
     {#if macro}
-        {#if macro.dxy}
-            <div class="macro-item">
-                <span class="macro-label">DXY</span>
-                <span class="macro-value">{macro.dxy.price.toFixed(2)}</span>
-                <span class="macro-change" class:up={macro.dxy.change > 0} class:down={macro.dxy.change < 0}>
-                    {fmtChange(macro.dxy.change)}
-                </span>
-            </div>
-        {/if}
+        <div class="ticker-track">
+            <!-- Duplicate content for seamless loop -->
+            {#each [0, 1, 2, 3] as _copy}
+                <div class="ticker-content">
+                    {#if macro.dxy}
+                        <div class="macro-item">
+                            <span class="macro-label">DXY</span>
+                            <span class="macro-value">{macro.dxy.price.toFixed(2)}</span>
+                            <span class="macro-change" class:up={macro.dxy.change > 0} class:down={macro.dxy.change < 0}>
+                                {fmtChange(macro.dxy.change)}
+                            </span>
+                        </div>
+                    {/if}
 
-        {#if macro.tnx}
-            <div class="macro-item">
-                <span class="macro-label">10Y</span>
-                <span class="macro-value">{macro.tnx.price.toFixed(2)}%</span>
-                <span class="macro-change" class:up={macro.tnx.change > 0} class:down={macro.tnx.change < 0}>
-                    {fmtChange(macro.tnx.change)}
-                </span>
-            </div>
-        {/if}
+                    {#if macro.tnx}
+                        <div class="macro-item">
+                            <span class="macro-label">10Y</span>
+                            <span class="macro-value">{macro.tnx.price.toFixed(2)}%</span>
+                            <span class="macro-change" class:up={macro.tnx.change > 0} class:down={macro.tnx.change < 0}>
+                                {fmtChange(macro.tnx.change)}
+                            </span>
+                        </div>
+                    {/if}
 
-        {#if macro.realYield !== null}
-            <div class="macro-item">
-                <span class="macro-label">Real Yield</span>
-                <span class="macro-value">{macro.realYield.toFixed(2)}%</span>
-            </div>
-        {/if}
+                    {#if macro.realYield !== null}
+                        <div class="macro-item">
+                            <span class="macro-label">Real Yield</span>
+                            <span class="macro-value">{macro.realYield.toFixed(2)}%</span>
+                        </div>
+                    {/if}
 
-        {#if macro.spx}
-            <div class="macro-item">
-                <span class="macro-label">SPX</span>
-                <span class="macro-value">{macro.spx.price.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                <span class="macro-change" class:up={macro.spx.change > 0} class:down={macro.spx.change < 0}>
-                    {fmtChange(macro.spx.change)}
-                </span>
-            </div>
-        {/if}
+                    {#if macro.spx}
+                        <div class="macro-item">
+                            <span class="macro-label">SPX</span>
+                            <span class="macro-value">{macro.spx.price.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                            <span class="macro-change" class:up={macro.spx.change > 0} class:down={macro.spx.change < 0}>
+                                {fmtChange(macro.spx.change)}
+                            </span>
+                        </div>
+                    {/if}
 
-        <div class="macro-signal" style="border-color:{signalColor}40; background:{signalColor}10">
-            <span class="macro-signal-label">Gold Signal</span>
-            <span class="macro-signal-value" style="color:{signalColor}">
-                {macro.goldSignal.toUpperCase()}
-            </span>
+                    <div class="macro-signal" style="border-color:{signalColor}40; background:{signalColor}10">
+                        <span class="macro-signal-label">Gold Signal</span>
+                        <span class="macro-signal-value" style="color:{signalColor}">
+                            {macro.goldSignal.toUpperCase()}
+                        </span>
+                    </div>
+
+                    <span class="ticker-separator"><AgentOrb size="sm" showLabel={false} /></span>
+                </div>
+            {/each}
         </div>
     {:else}
         <div class="macro-empty">Macro data unavailable</div>
@@ -66,25 +76,44 @@
 
 <style>
     .macro-strip {
-        display: flex;
-        align-items: stretch;
-        gap: 0;
         background: rgba(13, 17, 23, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
         overflow: hidden;
+        position: relative;
+    }
+    .ticker-track {
+        display: flex;
+        width: max-content;
+        animation: scroll 30s linear infinite;
+    }
+    .ticker-track:hover {
+        animation-play-state: paused;
+    }
+    @keyframes scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-25%); }
+    }
+    .ticker-content {
+        display: flex;
+        align-items: stretch;
+        flex-shrink: 0;
+    }
+    .ticker-separator {
+        display: flex;
+        align-items: center;
+        padding: 0 1.5rem;
+        color: rgba(255, 255, 255, 0.15);
+        font-size: 0.6rem;
     }
     .macro-item {
-        flex: 1;
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 2px;
-        padding: 0.75rem 0.5rem;
+        gap: 6px;
+        padding: 0.75rem 1.5rem;
+        white-space: nowrap;
         border-right: 1px solid rgba(255, 255, 255, 0.05);
-        min-width: 0;
     }
-    .macro-item:last-of-type { border-right: none; }
     .macro-label {
         font-size: 0.6rem;
         font-weight: 600;
@@ -108,13 +137,11 @@
     .macro-change.down { color: #ef4444; }
     .macro-signal {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 2px;
+        gap: 6px;
         padding: 0.75rem 1rem;
         border-left: 2px solid;
-        min-width: 90px;
+        white-space: nowrap;
     }
     .macro-signal-label {
         font-size: 0.55rem;
