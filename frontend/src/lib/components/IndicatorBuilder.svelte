@@ -1965,23 +1965,26 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .template-chip {
-        padding: 0.6rem 0.82rem;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.03);
-        color: rgba(255, 255, 255, 0.68);
-        font-size: 0.78rem;
-        line-height: 1.35;
+        padding: 0.55rem 0.8rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.02);
+        color: rgba(255, 255, 255, 0.55);
+        font-family: 'Inter', system-ui, sans-serif;
+        font-size: 0.76rem;
+        font-weight: 400;
+        line-height: 1.4;
         text-align: left;
         cursor: pointer;
-        transition: all 0.18s ease;
+        transition: all 0.2s ease;
     }
 
     .template-chip:hover {
         transform: translateY(-1px);
-        border-color: rgba(245, 158, 11, 0.22);
-        background: rgba(245, 158, 11, 0.08);
-        color: #f8fafc;
+        border-color: rgba(245, 158, 11, 0.2);
+        background: rgba(245, 158, 11, 0.06);
+        color: #e2e8f0;
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.04);
     }
 
     .shortcut-list,
