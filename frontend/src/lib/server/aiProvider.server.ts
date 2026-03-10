@@ -1,8 +1,17 @@
 import OpenAI from 'openai';
 import { env } from '$env/dynamic/private';
 
-export type AIProvider = 'openai' | 'deepseek';
-export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'o3-mini' | 'deepseek' | 'deepseek-r1';
+export type AIProvider = 'openai' | 'deepseek' | 'anthropic' | 'google';
+export type AIModel =
+    | 'gpt-4o'
+    | 'gpt-4o-mini'
+    | 'o3-mini'
+    | 'deepseek'
+    | 'deepseek-r1'
+    | 'claude-sonnet'
+    | 'claude-haiku'
+    | 'gemini-2.5-flash'
+    | 'gemini-2.5-pro';
 
 type ModelConfig = {
     provider: AIProvider;
@@ -17,7 +26,13 @@ const MODEL_CONFIG: Record<AIModel, ModelConfig> = {
     // DeepSeek default chat model.
     'deepseek': { provider: 'deepseek', apiModel: 'deepseek-chat', supportsImageInput: false },
     // DeepSeek API model name for R1 is `deepseek-reasoner`.
-    'deepseek-r1': { provider: 'deepseek', apiModel: 'deepseek-reasoner', supportsImageInput: false }
+    'deepseek-r1': { provider: 'deepseek', apiModel: 'deepseek-reasoner', supportsImageInput: false },
+    // Anthropic via OpenAI-compatible endpoint
+    'claude-sonnet': { provider: 'anthropic', apiModel: 'claude-sonnet-4-20250514', supportsImageInput: true },
+    'claude-haiku': { provider: 'anthropic', apiModel: 'claude-haiku-4-5-20251001', supportsImageInput: true },
+    // Google Gemini via OpenAI-compatible endpoint
+    'gemini-2.5-flash': { provider: 'google', apiModel: 'gemini-2.5-flash', supportsImageInput: true },
+    'gemini-2.5-pro': { provider: 'google', apiModel: 'gemini-2.5-pro', supportsImageInput: true }
 };
 
 export const AI_MODEL_LIST: AIModel[] = Object.keys(MODEL_CONFIG) as AIModel[];
@@ -33,6 +48,18 @@ export function resolveDefaultAIModel(): AIModel {
     return 'gpt-4o';
 }
 
+export function getModelConfig(model: AIModel): ModelConfig {
+    return MODEL_CONFIG[model];
+}
+
+/** Provider-specific base URLs and API key env var names */
+const PROVIDER_CONFIG: Record<AIProvider, { baseURL?: string; envKey: string; envLabel: string }> = {
+    openai: { envKey: 'OPENAI_API_KEY', envLabel: 'OPENAI_API_KEY' },
+    deepseek: { baseURL: 'https://api.deepseek.com', envKey: 'DEEPSEEK_API_KEY', envLabel: 'DEEPSEEK_API_KEY' },
+    anthropic: { baseURL: 'https://api.anthropic.com/v1/', envKey: 'ANTHROPIC_API_KEY', envLabel: 'ANTHROPIC_API_KEY' },
+    google: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', envKey: 'GOOGLE_AI_API_KEY', envLabel: 'GOOGLE_AI_API_KEY' }
+};
+
 export function getClientForModel(model: AIModel): {
     client: OpenAI;
     apiModel: string;
@@ -40,24 +67,44 @@ export function getClientForModel(model: AIModel): {
     supportsImageInput: boolean;
 } {
     const config = MODEL_CONFIG[model];
+    const providerCfg = PROVIDER_CONFIG[config.provider];
 
-    if (config.provider === 'deepseek') {
-        const key = env.DEEPSEEK_API_KEY;
-        if (!key) throw new Error('DEEPSEEK_API_KEY is not configured in .env');
-        return {
-            client: new OpenAI({ apiKey: key, baseURL: 'https://api.deepseek.com' }),
-            apiModel: config.apiModel,
-            provider: config.provider,
-            supportsImageInput: config.supportsImageInput
-        };
+    const key = (env as Record<string, string | undefined>)[providerCfg.envKey];
+    if (!key) throw new Error(`${providerCfg.envLabel} is not configured in .env`);
+
+    const clientOpts: ConstructorParameters<typeof OpenAI>[0] = { apiKey: key };
+    if (providerCfg.baseURL) {
+        clientOpts.baseURL = providerCfg.baseURL;
     }
 
-    const key = env.OPENAI_API_KEY;
-    if (!key) throw new Error('OPENAI_API_KEY is not configured in .env');
     return {
-        client: new OpenAI({ apiKey: key }),
+        client: new OpenAI(clientOpts),
         apiModel: config.apiModel,
         provider: config.provider,
         supportsImageInput: config.supportsImageInput
     };
+}
+
+/**
+ * Try the primary model, fall back to alternates on error.
+ * Returns the first successful client+model pair.
+ */
+export function getClientWithFallback(primary: AIModel, fallbacks: AIModel[]): {
+    client: OpenAI;
+    apiModel: string;
+    provider: AIProvider;
+    supportsImageInput: boolean;
+    model: AIModel;
+} {
+    const chain = [primary, ...fallbacks];
+    for (const model of chain) {
+        try {
+            const result = getClientForModel(model);
+            return { ...result, model };
+        } catch {
+            // API key not configured, try next
+            continue;
+        }
+    }
+    throw new Error(`No AI provider available. Tried: ${chain.join(', ')}. Check your API keys in .env`);
 }

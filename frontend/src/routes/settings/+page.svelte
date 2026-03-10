@@ -2,7 +2,7 @@
     import Sidebar from "$lib/components/Sidebar.svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import type { AIModel } from "$lib/server/aiProvider.server";
-    const AI_MODEL_LIST: AIModel[] = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1'];
+    const AI_MODEL_LIST: AIModel[] = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1', 'claude-sonnet', 'claude-haiku', 'gemini-2.5-flash', 'gemini-2.5-pro'];
     import { Settings2, Bot, Moon, Sun, Keyboard, Download, Trash2, Check, Loader2, AlertTriangle } from "lucide-svelte";
     import { onMount } from "svelte";
 
@@ -165,11 +165,15 @@
                         >
                             {#each AI_MODEL_LIST as model}
                                 <option value={model} selected={model === currentModel}>
-                                    {model === 'gpt-4o' ? 'GPT-4o (Default)' : 
+                                    {model === 'gpt-4o' ? 'GPT-4o (Default)' :
                                      model === 'gpt-4o-mini' ? 'GPT-4o Mini' :
                                      model === 'o3-mini' ? 'o3 Mini' :
                                      model === 'deepseek' ? 'DeepSeek Chat' :
-                                     model === 'deepseek-r1' ? 'DeepSeek R1' : model}
+                                     model === 'deepseek-r1' ? 'DeepSeek R1' :
+                                     model === 'claude-sonnet' ? 'Claude Sonnet 4' :
+                                     model === 'claude-haiku' ? 'Claude Haiku 4.5' :
+                                     model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' :
+                                     model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model}
                                 </option>
                             {/each}
                         </select>

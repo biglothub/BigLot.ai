@@ -58,9 +58,21 @@ export function validateEnvironment(): EnvValidationResult {
         warnings.push('SUPABASE_SERVICE_ROLE_KEY is recommended for admin operations');
     }
 
+    // Anthropic (optional)
+    const anthropicKey = getEnv('ANTHROPIC_API_KEY') ?? '';
+    if (anthropicKey.trim() && !anthropicKey.startsWith('sk-ant-')) {
+        warnings.push('ANTHROPIC_API_KEY may not be valid (should start with sk-ant-)');
+    }
+
+    // Google AI (optional)
+    const googleAIKey = getEnv('GOOGLE_AI_API_KEY') ?? '';
+    if (googleAIKey.trim() && !googleAIKey.startsWith('AI')) {
+        warnings.push('GOOGLE_AI_API_KEY may not be valid (should start with AI)');
+    }
+
     // AI Model validation
     const aiModel = getEnv('AI_MODEL') ?? '';
-    const validModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1'];
+    const validModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1', 'claude-sonnet', 'claude-haiku', 'gemini-2.5-flash', 'gemini-2.5-pro'];
     if (aiModel && !validModels.includes(aiModel)) {
         warnings.push(`AI_MODEL "${aiModel}" is not recognized, defaulting to gpt-4o`);
     }
@@ -73,6 +85,14 @@ export function validateEnvironment(): EnvValidationResult {
 
     if (hasTelegramToken && !hasTelegramUsername) {
         warnings.push('TELEGRAM_BOT_USERNAME is recommended when using Telegram');
+    }
+
+    // Tavily Web Search (optional)
+    const tavilyKey = getEnv('TAVILY_API_KEY') ?? '';
+    if (!tavilyKey.trim()) {
+        warnings.push('TAVILY_API_KEY is not set — web search tool will be unavailable');
+    } else if (!tavilyKey.startsWith('tvly-')) {
+        warnings.push('TAVILY_API_KEY may not be valid (should start with tvly-)');
     }
 
     // Production warnings
