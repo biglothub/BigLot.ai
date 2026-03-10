@@ -73,6 +73,18 @@
         chatState.setChatMode(modes[(idx + 1) % modes.length]);
     }
 
+    const DISCUSSION_PRESETS = [
+        { label: 'BTC Bull vs Bear', prompt: 'วิเคราะห์ Bitcoin ควรซื้อหรือขาย ณ ตอนนี้' },
+        { label: 'Gold Outlook', prompt: 'ทองคำจะขึ้นหรือลงในอีก 3 เดือน วิเคราะห์ให้หน่อย' },
+        { label: 'SET Index', prompt: 'ตลาดหุ้นไทย SET Index แนวโน้มเป็นอย่างไร' },
+        { label: 'US Recession?', prompt: 'เศรษฐกิจสหรัฐมีโอกาส recession ไหมในปีนี้' },
+    ];
+
+    function sendPreset(prompt: string) {
+        input = prompt;
+        handleSend();
+    }
+
     // Global keyboard shortcuts
     onMount(() => {
         const handleGlobalKeydown = (e: KeyboardEvent) => {
@@ -108,6 +120,20 @@
             >
                 <Plus size={12} class="rotate-45" />
             </button>
+        </div>
+    {/if}
+
+    <!-- Discussion Preset Topics -->
+    {#if chatState.chatMode === 'discussion' && chatState.messages.length === 0 && !chatState.isLoading}
+        <div class="flex flex-wrap gap-2 mb-3">
+            {#each DISCUSSION_PRESETS as preset}
+                <button
+                    onclick={() => sendPreset(preset.prompt)}
+                    class="px-3 py-1.5 text-xs rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                >
+                    {preset.label}
+                </button>
+            {/each}
         </div>
     {/if}
 

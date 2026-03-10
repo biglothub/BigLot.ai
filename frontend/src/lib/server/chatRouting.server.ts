@@ -10,6 +10,17 @@ type RouteInput = {
 	hasImageInput: boolean;
 };
 
+const DEEP_RESEARCH_SIGNALS = [
+	'deep research',
+	'research report',
+	'วิจัย',
+	'วิเคราะห์เชิงลึก',
+	'in-depth analysis',
+	'comprehensive analysis',
+	'deep dive',
+	'วิจัยเชิงลึก'
+];
+
 const MULTI_STEP_SIGNALS = [
 	'วิเคราะห์',
 	'วางแผน',
@@ -69,6 +80,11 @@ export function classifyChatRoute(input: RouteInput): AgentRouteType {
 	const text = input.lastUserMessage.toLowerCase().trim();
 	if (!text) return 'direct_answer';
 
+	// Deep research has highest priority — check before normal multi-step
+	if (DEEP_RESEARCH_SIGNALS.some((signal) => signalMatches(text, signal))) {
+		return 'deep_research';
+	}
+
 	if (input.mode === 'gold' || input.mode === 'macro' || input.mode === 'portfolio') {
 		return 'plan_then_execute';
 	}
@@ -85,5 +101,5 @@ export function classifyChatRoute(input: RouteInput): AgentRouteType {
 }
 
 export function shouldEnablePlanning(chatMode: ChatMode, routeType: AgentRouteType): boolean {
-	return chatMode === 'agent' && routeType === 'plan_then_execute';
+	return chatMode === 'agent' && (routeType === 'plan_then_execute' || routeType === 'deep_research');
 }

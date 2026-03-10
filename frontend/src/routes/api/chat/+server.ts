@@ -15,7 +15,7 @@ import {
 import { classifyChatRoute, shouldEnablePlanning } from '$lib/server/chatRouting.server';
 import { getMemoryContext } from '$lib/server/memory.server';
 import { setMemoryToolUserId } from '$lib/server/tools/memory.tool';
-import type { AgentRouteType, ContentBlock } from '$lib/types/contentBlock';
+import type { AgentRouteType, ContentBlock, ResearchReportBlock, ResearchSection } from '$lib/types/contentBlock';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type IncomingMessage = {
@@ -30,6 +30,51 @@ function isRole(value: unknown): value is IncomingMessage['role'] {
 
 function sseEvent(event: string, data: unknown): string {
     return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/** Parse streamed synthesis text into structured sections by ## headers */
+function parseResearchSections(text: string): ResearchSection[] {
+    const lines = text.split('\n');
+    const sections: ResearchSection[] = [];
+    let currentTitle = '';
+    let currentLines: string[] = [];
+
+    for (const line of lines) {
+        const headerMatch = line.match(/^##\s+(.+)/);
+        if (headerMatch) {
+            if (currentTitle && currentLines.length > 0) {
+                sections.push({
+                    id: `section_${sections.length + 1}`,
+                    title: currentTitle,
+                    content: currentLines.join('\n').trim()
+                });
+            }
+            currentTitle = headerMatch[1].trim();
+            currentLines = [];
+        } else {
+            currentLines.push(line);
+        }
+    }
+
+    // Push last section
+    if (currentTitle && currentLines.length > 0) {
+        sections.push({
+            id: `section_${sections.length + 1}`,
+            title: currentTitle,
+            content: currentLines.join('\n').trim()
+        });
+    }
+
+    // If no ## headers found, wrap entire text as single section
+    if (sections.length === 0 && text.trim().length > 0) {
+        sections.push({
+            id: 'section_1',
+            title: 'Research Findings',
+            content: text.trim()
+        });
+    }
+
+    return sections;
 }
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
@@ -91,13 +136,14 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
               lastUserMessage,
               hasImageInput: safeMessages.some((m) => m.role === 'user' && !!m.image_url)
           });
+    const isDeepResearch = routeType === 'deep_research';
     const planningEnabled = shouldEnablePlanning(chatMode, routeType);
-    const systemPrompt = getSystemPrompt(mode, planningEnabled);
+    const systemPrompt = getSystemPrompt(mode, planningEnabled, isDeepResearch);
 
     // Select model based on chatMode — configurable via .env
     const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : 'deepseek';
     const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : 'gpt-4o';
-    const selectedModel = chatMode === 'agent' ? agentModel : chatMode === 'discussion' ? agentModel : normalModel;
+    const selectedModel = chatMode === 'agent' || isDeepResearch ? agentModel : chatMode === 'discussion' ? agentModel : normalModel;
 
     if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
         return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
@@ -195,11 +241,23 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     // Agent mode: GPT-4o with tool calling via agent loop
                     const allBlocks: ContentBlock[] = [];
 
+                    const researchStartTime = Date.now();
+
+                    // Keep-alive interval to prevent idle timeout on long research
+                    const keepAliveInterval = isDeepResearch
+                        ? setInterval(() => {
+                              try { controller.enqueue(encoder.encode(': keepalive\n\n')); } catch { /* stream closed */ }
+                          }, 15_000)
+                        : null;
+
+                    const deepResearchMaxIterations = parseInt(env.DEEP_RESEARCH_MAX_ITERATIONS || '8', 10);
+
                     const resultBlocks = await runAgentLoop({
                         client,
                         apiModel,
                         messages: formattedMessages,
-                        maxIterations: 5,
+                        maxIterations: isDeepResearch ? deepResearchMaxIterations : 5,
+                        maxPlanSteps: isDeepResearch ? 10 : 6,
                         planningEnabled,
                         currentMode: mode,
                         callbacks: {
@@ -275,10 +333,31 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         }
                     });
 
+                    if (keepAliveInterval) clearInterval(keepAliveInterval);
+
                     for (const block of resultBlocks) {
                         if (!allBlocks.includes(block)) {
                             allBlocks.push(block);
                         }
+                    }
+
+                    // Post-process: build ResearchReportBlock for deep research
+                    if (isDeepResearch && streamedText.length > 0) {
+                        const sections = parseResearchSections(streamedText);
+                        const report: ResearchReportBlock = {
+                            type: 'research_report',
+                            reportId: `research_${Date.now()}`,
+                            title: `Research: ${lastUserMessage.slice(0, 60)}`,
+                            query: lastUserMessage,
+                            sections,
+                            status: 'complete',
+                            toolCallCount,
+                            totalDurationMs: Date.now() - researchStartTime,
+                            createdAt: researchStartTime,
+                            updatedAt: Date.now()
+                        };
+                        allBlocks.push(report);
+                        controller.enqueue(encoder.encode(sseEvent('research_report', { report })));
                     }
 
                     await runIdPromise;
@@ -309,9 +388,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                                     )
                                 );
                             },
-                            onTextDelta: (text) => {
+                            onTextDelta: (text, panelistId) => {
                                 streamedText += text;
-                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text, panelistId })));
                             },
                             onTurnEnd: (discussionId, panelistId, round) => {
                                 controller.enqueue(
@@ -319,6 +398,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                                         sseEvent('discussion_turn_end', { discussionId, panelistId, round })
                                     )
                                 );
+                            },
+                            onRoundSkipped: (round, reason) => {
+                                controller.enqueue(encoder.encode(sseEvent('discussion_round_skipped', { round, reason })));
                             },
                             onError: (message) => {
                                 controller.enqueue(encoder.encode(sseEvent('error', { message })));

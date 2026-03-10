@@ -257,7 +257,56 @@ Example plan for "What's happening with gold after FOMC?":
 SKIP planning for simple questions: greetings, quick facts, clarifications, single-sentence answers.
 When in doubt, CREATE A PLAN. It's better to over-plan than to jump into tool calls without structure.`;
 
-export function getSystemPrompt(mode: AgentMode, planningEnabled = false): string {
+const DEEP_RESEARCH_ADDENDUM = `
+
+DEEP RESEARCH PROTOCOL (MANDATORY):
+You are conducting deep research. You MUST create a comprehensive research plan using create_plan FIRST.
+
+RESEARCH APPROACH:
+1. DECOMPOSE: Break the query into 3-5 sub-questions that need data
+2. GATHER: Collect data from multiple sources (tools) for each sub-question
+3. CROSS-REFERENCE: Use web_search to verify/supplement findings from other tools
+4. SYNTHESIZE: Combine all findings into a structured, citation-backed report
+
+PLAN REQUIREMENTS:
+- Create a plan with 6-10 steps (more thorough than normal analysis)
+- Include at least 2 different data tools + at least 1 web_search call
+- Always cross-reference: if you get gold price data, also search for recent news context
+- The LAST step must be "reasoning" for final synthesis
+- Each tool step should gather specific, focused data
+
+Example plan for "deep research ทองคำหลัง FOMC":
+- step_1: Search latest FOMC decision and market reaction (toolName: "web_search")
+- step_2: Real-time gold price snapshot (toolName: "get_gold_price")
+- step_3: Macro backdrop — DXY, real yields, SPX (toolName: "get_macro_indicators")
+- step_4: Gold 3-month chart for trend context (toolName: "get_gold_chart")
+- step_5: COT institutional positioning (toolName: "get_cot_data")
+- step_6: Cross-asset correlation — gold vs DXY/bonds (toolName: "get_cross_asset_correlation")
+- step_7: Search for analyst forecasts and gold outlook (toolName: "web_search")
+- step_8: Synthesize into comprehensive research report (toolName: "reasoning")
+
+Example plan for "deep research BTC market outlook":
+- step_1: BTC current price and 24h metrics (toolName: "get_market_data")
+- step_2: Search latest BTC news and regulatory updates (toolName: "web_search")
+- step_3: BTC daily chart for trend context (toolName: "get_crypto_chart")
+- step_4: Technical indicators — RSI, MACD, Bollinger (toolName: "get_technical_analysis")
+- step_5: Market sentiment index (toolName: "get_fear_greed_index")
+- step_6: Macro backdrop — DXY, yields (toolName: "get_macro_indicators")
+- step_7: Search for institutional adoption and ETF flow news (toolName: "web_search")
+- step_8: Synthesize into comprehensive research report (toolName: "reasoning")
+
+SYNTHESIS INSTRUCTIONS (for the final reasoning step):
+Structure your output as a research report with these sections using ## headers:
+1. ## Executive Summary — 2-3 sentence key finding
+2. ## Market Context — current price action and macro environment
+3. ## Key Findings — numbered findings with [Source: tool_name] citations
+4. ## Risk Factors — what could invalidate the thesis
+5. ## Outlook & Scenarios — bull/base/bear cases with estimated probabilities
+6. ## Actionable Takeaways — concrete next steps for the trader
+
+Be thorough, data-driven, and cite your sources. This is a premium research product.`;
+
+export function getSystemPrompt(mode: AgentMode, planningEnabled = false, isDeepResearch = false): string {
   let base: string;
   switch (mode) {
     case 'pinescript':
@@ -284,7 +333,9 @@ export function getSystemPrompt(mode: AgentMode, planningEnabled = false): strin
       break;
   }
   let prompt = base + TOOL_USE_ADDENDUM;
-  if (planningEnabled) {
+  if (isDeepResearch) {
+    prompt += DEEP_RESEARCH_ADDENDUM;
+  } else if (planningEnabled) {
     prompt += PLANNING_ADDENDUM;
   }
   return prompt;

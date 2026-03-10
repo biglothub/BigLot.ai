@@ -42,6 +42,7 @@ export type AgentLoopConfig = {
 	apiModel: string;
 	messages: ChatCompletionMessageParam[];
 	maxIterations?: number;
+	maxPlanSteps?: number;
 	planningEnabled?: boolean;
 	currentMode?: AgentMode;
 	callbacks: AgentCallbacks;
@@ -109,11 +110,11 @@ async function streamLLMCall(
 /**
  * Parse create_plan arguments into a PlanBlock.
  */
-function buildPlanBlock(args: Record<string, unknown>): PlanBlock {
+function buildPlanBlock(args: Record<string, unknown>, maxSteps = 6): PlanBlock {
 	const title = typeof args.title === 'string' ? args.title : 'Execution Plan';
 	const rawSteps = Array.isArray(args.steps) ? args.steps : [];
 
-	const steps: PlanStep[] = rawSteps.slice(0, 6).map((s: any, i: number) => ({
+	const steps: PlanStep[] = rawSteps.slice(0, maxSteps).map((s: any, i: number) => ({
 		id: typeof s.id === 'string' ? s.id : `step_${i + 1}`,
 		title: typeof s.title === 'string' ? s.title : `Step ${i + 1}`,
 		description: typeof s.description === 'string' ? s.description : undefined,
@@ -133,9 +134,9 @@ function buildPlanBlock(args: Record<string, unknown>): PlanBlock {
 }
 
 /** Validate and normalize plan — auto-appends a synthesis step if missing */
-function normalizePlan(plan: PlanBlock): string | null {
+function normalizePlan(plan: PlanBlock, maxSteps = 6): string | null {
 	if (plan.steps.length === 0) return 'Plan had no steps';
-	if (plan.steps.length > 6) return 'Plan exceeded the 6 step limit';
+	if (plan.steps.length > maxSteps) return `Plan exceeded the ${maxSteps} step limit`;
 
 	for (const step of plan.steps) {
 		if (step.toolName && step.toolName !== 'reasoning' && !getTool(step.toolName)) {
@@ -146,8 +147,8 @@ function normalizePlan(plan: PlanBlock): string | null {
 	// Auto-append reasoning step if plan doesn't end with one
 	const lastStep = plan.steps[plan.steps.length - 1];
 	if (lastStep.toolName && lastStep.toolName !== 'reasoning') {
-		if (plan.steps.length >= 6) {
-			return 'Plan exceeded the 6 step limit with required synthesis step';
+		if (plan.steps.length >= maxSteps) {
+			return `Plan exceeded the ${maxSteps} step limit with required synthesis step`;
 		}
 		plan.steps.push({
 			id: `step_${plan.steps.length + 1}`,
@@ -323,7 +324,7 @@ function applyHandoff(
  * Main agent loop with Manus-like planning support.
  */
 export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBlock[]> {
-	const { client, apiModel, callbacks, maxIterations = 5, planningEnabled = false } = config;
+	const { client, apiModel, callbacks, maxIterations = 5, maxPlanSteps = 6, planningEnabled = false } = config;
 	let currentMode = config.currentMode ?? 'coach';
 	const messages = [...config.messages];
 	const allContentBlocks: ContentBlock[] = [];
@@ -388,8 +389,8 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 			planArgs = {};
 		}
 
-		const plan = buildPlanBlock(planArgs);
-		const planValidationError = normalizePlan(plan);
+		const plan = buildPlanBlock(planArgs, maxPlanSteps);
+		const planValidationError = normalizePlan(plan, maxPlanSteps);
 		if (planValidationError) {
 			// Invalid plan, fall through to standard mode
 			callbacks.onError(`${planValidationError}, falling back to standard mode`);

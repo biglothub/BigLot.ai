@@ -77,6 +77,14 @@ export function validateEnvironment(): EnvValidationResult {
         warnings.push(`AI_MODEL "${aiModel}" is not recognized, defaulting to gpt-4o`);
     }
 
+    // Discussion model overrides (optional)
+    for (const key of ['DISCUSSION_BULL_MODEL', 'DISCUSSION_BEAR_MODEL', 'DISCUSSION_MODERATOR_MODEL']) {
+        const val = getEnv(key) ?? '';
+        if (val && !validModels.includes(val)) {
+            warnings.push(`${key} "${val}" is not recognized — will fall back to auto-detection`);
+        }
+    }
+
     // Telegram (optional but warn if partially configured)
     const telegramToken = getEnv('TELEGRAM_BOT_TOKEN') ?? '';
     const telegramUsername = getEnv('TELEGRAM_BOT_USERNAME') ?? '';

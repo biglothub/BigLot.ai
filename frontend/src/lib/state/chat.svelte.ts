@@ -486,7 +486,8 @@ class ChatState {
                                 data.routeType === 'direct_answer' ||
                                 data.routeType === 'single_tool' ||
                                 data.routeType === 'plan_then_execute' ||
-                                data.routeType === 'discussion'
+                                data.routeType === 'discussion' ||
+                                data.routeType === 'deep_research'
                                     ? data.routeType
                                     : undefined;
                             break;
@@ -502,8 +503,13 @@ class ChatState {
                                 (b): b is DiscussionBlock => b.type === 'discussion'
                             );
                             if (discBlock && discBlock.status === 'running' && discBlock.turns.length > 0) {
-                                const currentTurn = discBlock.turns[discBlock.turns.length - 1];
-                                currentTurn.content += data.content || '';
+                                // Route to correct turn by panelistId (supports parallel streaming)
+                                const targetTurn = data.panelistId
+                                    ? [...discBlock.turns].reverse().find(t => t.panelistId === data.panelistId)
+                                    : discBlock.turns[discBlock.turns.length - 1];
+                                if (targetTurn) {
+                                    targetTurn.content += data.content || '';
+                                }
                                 discBlock.updatedAt = Date.now();
                                 this.messages[msgIdx].contentBlocks = [...allBlocks];
                             } else {
@@ -625,6 +631,24 @@ class ChatState {
                             }
                             break;
                         }
+                        case 'discussion_round_skipped': {
+                            const discSkip = allBlocks.find(
+                                (b): b is DiscussionBlock => b.type === 'discussion'
+                            );
+                            if (discSkip) {
+                                discSkip.skippedRounds = [...(discSkip.skippedRounds ?? []), data.round];
+                                discSkip.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
+                        case 'research_report': {
+                            if (data.report) {
+                                allBlocks.push(data.report);
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
                         case 'done': {
                             // Final content blocks from server
                             if (typeof data.runId === 'string') {
@@ -634,7 +658,8 @@ class ChatState {
                                 data.routeType === 'direct_answer' ||
                                 data.routeType === 'single_tool' ||
                                 data.routeType === 'plan_then_execute' ||
-                                data.routeType === 'discussion'
+                                data.routeType === 'discussion' ||
+                                data.routeType === 'deep_research'
                             ) {
                                 this.messages[msgIdx].routeType = data.routeType;
                             }

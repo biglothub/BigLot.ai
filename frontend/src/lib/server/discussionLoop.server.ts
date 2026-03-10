@@ -1,5 +1,5 @@
 import { env } from '$env/dynamic/private';
-import { getClientForModel, type AIModel } from './aiProvider.server';
+import { getClientForModel, isAIModel, type AIModel } from './aiProvider.server';
 import type {
 	DiscussionBlock,
 	DiscussionPanelist,
@@ -13,8 +13,9 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 export type DiscussionCallbacks = {
 	onDiscussionStart: (block: DiscussionBlock) => void;
 	onTurnStart: (discussionId: string, panelistId: DiscussionPanelistId, round: number, model: string) => void;
-	onTextDelta: (text: string) => void;
+	onTextDelta: (text: string, panelistId: DiscussionPanelistId) => void;
 	onTurnEnd: (discussionId: string, panelistId: DiscussionPanelistId, round: number) => void;
+	onRoundSkipped: (round: number, reason: string) => void;
 	onError: (message: string) => void;
 };
 
@@ -38,12 +39,22 @@ const PANELIST_META: Record<DiscussionPanelistId, Omit<DiscussionPanelist, 'mode
 	moderator: { id: 'moderator', name: 'Moderator', color: 'amber', emoji: '⚖️' }
 };
 
+// --- Max Tokens Per Turn Role ---
+
+const MAX_TOKENS_PER_ROLE: Record<string, number> = {
+	intro: 200,
+	argument: 600,
+	rebuttal: 500,
+	synthesis: 800
+};
+
 // --- Turn Schedule ---
 
 type TurnDef = { panelistId: DiscussionPanelistId; round: number; role: string };
 
-const ROUND_1_TURNS: TurnDef[] = [
-	{ panelistId: 'moderator', round: 0, role: 'intro' },
+const INTRO_TURN: TurnDef = { panelistId: 'moderator', round: 0, role: 'intro' };
+
+const ROUND_1_ARGUMENTS: TurnDef[] = [
 	{ panelistId: 'bull', round: 1, role: 'argument' },
 	{ panelistId: 'bear', round: 1, role: 'argument' }
 ];
@@ -58,6 +69,21 @@ const SYNTHESIS_TURN: TurnDef = { panelistId: 'moderator', round: 99, role: 'syn
 // --- Model Resolution ---
 
 function resolveDiscussionModels(): PanelistConfig[] {
+	// Check env overrides first
+	const envBull = isAIModel(env.DISCUSSION_BULL_MODEL) ? env.DISCUSSION_BULL_MODEL as AIModel : null;
+	const envBear = isAIModel(env.DISCUSSION_BEAR_MODEL) ? env.DISCUSSION_BEAR_MODEL as AIModel : null;
+	const envMod = isAIModel(env.DISCUSSION_MODERATOR_MODEL) ? env.DISCUSSION_MODERATOR_MODEL as AIModel : null;
+
+	if (envBull || envBear || envMod) {
+		const fallback = envBull || envBear || envMod;
+		return [
+			{ id: 'bull', model: envBull || fallback!, temperature: 0.7 },
+			{ id: 'bear', model: envBear || fallback!, temperature: 0.7 },
+			{ id: 'moderator', model: envMod || fallback!, temperature: 0.5 }
+		];
+	}
+
+	// Auto-detect from available API keys
 	const hasOpenAI = !!env.OPENAI_API_KEY;
 	const hasDeepSeek = !!env.DEEPSEEK_API_KEY;
 
@@ -237,10 +263,24 @@ async function executeTurn(
 			{ role: 'system', content: systemPrompt }
 		];
 
-		// Include relevant conversation history (last user message for context)
-		const lastUserMsg = [...conversationHistory].reverse().find((m) => m.role === 'user');
-		if (lastUserMsg) {
-			messages.push(lastUserMsg);
+		// Include conversation context (last few messages for richer context)
+		const recentHistory = conversationHistory
+			.filter((m) => m.role === 'user' || m.role === 'assistant')
+			.slice(-5);
+
+		if (recentHistory.length > 0) {
+			const contextStr = recentHistory
+				.map((m) => {
+					const content = typeof m.content === 'string' ? m.content : '';
+					return `[${m.role}]: ${content}`;
+				})
+				.join('\n')
+				.slice(0, 2000);
+
+			messages.push({
+				role: 'user',
+				content: `Previous conversation context:\n${contextStr}`
+			});
 		}
 
 		// Add transcript of prior debate turns
@@ -257,20 +297,27 @@ async function executeTurn(
 		const createParams: Record<string, unknown> = {
 			model: apiModel,
 			messages,
-			stream: true
+			stream: true,
+			stream_options: { include_usage: true }
 		};
 		if (apiModel !== 'deepseek-reasoner') {
 			createParams.temperature = pConfig.temperature;
 		}
+		createParams.max_tokens = MAX_TOKENS_PER_ROLE[turnDef.role] ?? 600;
 
 		const stream = await (client.chat.completions.create as Function)(createParams);
 
 		let turnText = '';
+		let turnUsage = { promptTokens: 0, completionTokens: 0 };
 		for await (const chunk of stream as AsyncIterable<any>) {
 			const text = chunk.choices?.[0]?.delta?.content;
 			if (text) {
 				turnText += text;
-				callbacks.onTextDelta(text);
+				callbacks.onTextDelta(text, turnDef.panelistId);
+			}
+			if (chunk.usage) {
+				turnUsage.promptTokens = chunk.usage.prompt_tokens ?? 0;
+				turnUsage.completionTokens = chunk.usage.completion_tokens ?? 0;
 			}
 		}
 
@@ -285,6 +332,7 @@ async function executeTurn(
 			round: turnDef.round,
 			content: turnText,
 			model: pConfig.model,
+			usage: turnUsage,
 			startedAt: Date.now(),
 			completedAt: Date.now()
 		});
@@ -340,11 +388,15 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 
 	const completedTurns: { panelistId: DiscussionPanelistId; round: number; content: string }[] = [];
 
-	// Phase 1: Intro + Round 1 (always runs)
-	for (const turnDef of ROUND_1_TURNS) {
+	// Phase 1a: Moderator intro (sequential)
+	const introConfig = modelMap.get(INTRO_TURN.panelistId)!;
+	await executeTurn(INTRO_TURN, topic, introConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+
+	// Phase 1b: Bull + Bear Round 1 (parallel — they don't need each other's transcript)
+	await Promise.all(ROUND_1_ARGUMENTS.map((turnDef) => {
 		const pConfig = modelMap.get(turnDef.panelistId)!;
-		await executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
-	}
+		return executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+	}));
 
 	// Phase 2: AI evaluates whether Round 2 (rebuttal) is needed
 	const moderatorConfig = modelMap.get('moderator')!;
@@ -355,11 +407,23 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 			const pConfig = modelMap.get(turnDef.panelistId)!;
 			await executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
 		}
+	} else {
+		discussionBlock.skippedRounds = [2];
+		callbacks.onRoundSkipped(2, 'AI determined positions are similar enough to skip rebuttal');
 	}
 
 	// Phase 3: Synthesis (always runs)
 	const synthConfig = modelMap.get(SYNTHESIS_TURN.panelistId)!;
 	await executeTurn(SYNTHESIS_TURN, topic, synthConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+
+	// Accumulate total usage
+	discussionBlock.totalUsage = discussionBlock.turns.reduce(
+		(acc, t) => ({
+			promptTokens: acc.promptTokens + (t.usage?.promptTokens ?? 0),
+			completionTokens: acc.completionTokens + (t.usage?.completionTokens ?? 0)
+		}),
+		{ promptTokens: 0, completionTokens: 0 }
+	);
 
 	discussionBlock.status = 'complete';
 	discussionBlock.updatedAt = Date.now();

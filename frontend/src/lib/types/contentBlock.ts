@@ -167,6 +167,7 @@ export type DiscussionTurn = {
 	model: string;
 	startedAt: number;
 	completedAt?: number;
+	usage?: { promptTokens: number; completionTokens: number };
 };
 
 export type DiscussionBlock = {
@@ -175,7 +176,30 @@ export type DiscussionBlock = {
 	topic: string;
 	panelists: DiscussionPanelist[];
 	turns: DiscussionTurn[];
+	skippedRounds?: number[];
+	totalUsage?: { promptTokens: number; completionTokens: number };
 	status: 'running' | 'complete' | 'error';
+	createdAt: number;
+	updatedAt: number;
+};
+
+// --- Research Report Block (deep research output) ---
+
+export type ResearchSection = {
+	id: string;
+	title: string;
+	content: string; // markdown
+};
+
+export type ResearchReportBlock = {
+	type: 'research_report';
+	reportId: string;
+	title: string;
+	query: string;
+	sections: ResearchSection[];
+	status: 'researching' | 'synthesizing' | 'complete' | 'error';
+	toolCallCount: number;
+	totalDurationMs: number;
 	createdAt: number;
 	updatedAt: number;
 };
@@ -205,11 +229,12 @@ export type ContentBlock =
 	| HeatmapBlock
 	| TradeSetupBlock
 	| SourcesBlock
-	| DiscussionBlock;
+	| DiscussionBlock
+	| ResearchReportBlock;
 
 export type ContentBlockType = ContentBlock['type'];
 
-export type AgentRouteType = 'direct_answer' | 'single_tool' | 'plan_then_execute' | 'discussion';
+export type AgentRouteType = 'direct_answer' | 'single_tool' | 'plan_then_execute' | 'discussion' | 'deep_research';
 
 // --- Tool Call Status (for UI progress tracking) ---
 
@@ -306,6 +331,17 @@ export type SSEDiscussionTurnEnd = {
 	round: number;
 };
 
+export type SSEDiscussionRoundSkipped = {
+	event: 'discussion_round_skipped';
+	round: number;
+	reason: string;
+};
+
+export type SSEResearchReport = {
+	event: 'research_report';
+	report: ResearchReportBlock;
+};
+
 export type SSEEvent =
 	| SSERunStart
 	| SSERunId
@@ -318,4 +354,6 @@ export type SSEEvent =
 	| SSEPlanUpdate
 	| SSEPlanComplete
 	| SSEDiscussionTurnStart
-	| SSEDiscussionTurnEnd;
+	| SSEDiscussionTurnEnd
+	| SSEDiscussionRoundSkipped
+	| SSEResearchReport;

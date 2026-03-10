@@ -14,6 +14,7 @@
     import TradeSetupBlock from "./TradeSetupBlock.svelte";
     import SourcesBlock from "./SourcesBlock.svelte";
     import DiscussionBlock from "./DiscussionBlock.svelte";
+    import ResearchReportBlock from "./ResearchReportBlock.svelte";
 
     let { block }: { block: ContentBlock } = $props();
 </script>
@@ -52,4 +53,6 @@
     <SourcesBlock sources={block.sources} />
 {:else if block.type === "discussion"}
     <DiscussionBlock discussion={block} />
+{:else if block.type === "research_report"}
+    <ResearchReportBlock report={block} />
 {/if}
