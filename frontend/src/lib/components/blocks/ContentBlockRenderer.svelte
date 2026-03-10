@@ -12,6 +12,7 @@
     import GaugeBlock from "./GaugeBlock.svelte";
     import HeatmapBlock from "./HeatmapBlock.svelte";
     import TradeSetupBlock from "./TradeSetupBlock.svelte";
+    import SourcesBlock from "./SourcesBlock.svelte";
 
     let { block }: { block: ContentBlock } = $props();
 </script>
@@ -46,4 +47,6 @@
     <HeatmapBlock type="heatmap" title={block.title} assets={block.assets} timeframes={block.timeframes} data={block.data} colorScale={block.colorScale} />
 {:else if block.type === "trade_setup"}
     <TradeSetupBlock type="trade_setup" asset={block.asset} direction={block.direction} thesis={block.thesis} entryZone={block.entryZone} stopLoss={block.stopLoss} targets={block.targets} riskRewardRatio={block.riskRewardRatio} maxRiskPct={block.maxRiskPct} invalidation={block.invalidation} timeframe={block.timeframe} />
+{:else if block.type === "sources"}
+    <SourcesBlock sources={block.sources} />
 {/if}
