@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Database, ChevronDown, ExternalLink } from "lucide-svelte";
+    import { ExternalLink } from "lucide-svelte";
 
     let {
         sources,
@@ -7,7 +7,7 @@
         sources: { name: string; url?: string; accessedAt: number }[];
     } = $props();
 
-    let expanded = $state(false);
+    let activePopover = $state<number | null>(null);
 
     function formatTime(ts: number): string {
         const d = new Date(ts);
@@ -19,127 +19,147 @@
             minute: "2-digit",
         }) + " ICT";
     }
+
+    function togglePopover(idx: number) {
+        activePopover = activePopover === idx ? null : idx;
+    }
 </script>
 
-<div class="sources-block">
-    <button class="sources-toggle" onclick={() => (expanded = !expanded)}>
-        <Database size={13} class="sources-icon" />
-        <span class="sources-label">
-            {sources.length} data source{sources.length !== 1 ? "s" : ""}
-        </span>
-        <ChevronDown
-            size={12}
-            class="sources-chevron {expanded ? 'rotated' : ''}"
-        />
-    </button>
-    {#if expanded}
-        <ul class="sources-list">
-            {#each sources as source}
-                <li class="source-item">
-                    <span class="source-name">{source.name}</span>
+<div class="sources-inline">
+    {#each sources as source, idx}
+        <span class="source-pill-wrapper">
+            <button
+                class="source-pill"
+                onclick={() => togglePopover(idx)}
+                title={source.name}
+            >
+                {idx + 1}
+            </button>
+            {#if activePopover === idx}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="source-popover" onclick={(e) => e.stopPropagation()}>
+                    <div class="popover-name">{source.name}</div>
+                    <div class="popover-time">{formatTime(source.accessedAt)}</div>
                     {#if source.url}
                         <a
                             href={source.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="source-link"
+                            class="popover-link"
                         >
+                            {source.url.replace(/^https?:\/\//, "")}
                             <ExternalLink size={10} />
                         </a>
                     {/if}
-                    <span class="source-time">{formatTime(source.accessedAt)}</span>
-                </li>
-            {/each}
-        </ul>
-    {/if}
+                </div>
+            {/if}
+        </span>
+    {/each}
 </div>
 
 <style>
-    .sources-block {
-        margin-top: 8px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        overflow: hidden;
-    }
-
-    .sources-toggle {
-        display: flex;
+    .sources-inline {
+        display: inline-flex;
         align-items: center;
-        gap: 6px;
-        width: 100%;
-        padding: 8px 12px;
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: rgba(255, 255, 255, 0.4);
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+    }
+
+    .source-pill-wrapper {
+        position: relative;
+        display: inline-flex;
+    }
+
+    .source-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
         font-size: 11px;
+        font-weight: 600;
         font-family: inherit;
-        transition: color 0.15s;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.5);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        line-height: 1;
+        padding: 0;
     }
 
-    .sources-toggle:hover {
-        color: rgba(255, 255, 255, 0.6);
+    .source-pill:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.8);
+        border-color: rgba(255, 255, 255, 0.25);
     }
 
-    :global(.sources-icon) {
-        flex-shrink: 0;
-        opacity: 0.6;
-    }
-
-    .sources-label {
-        flex: 1;
-        text-align: left;
-        letter-spacing: 0.2px;
-    }
-
-    :global(.sources-chevron) {
-        flex-shrink: 0;
-        transition: transform 0.2s ease;
-    }
-
-    :global(.sources-chevron.rotated) {
-        transform: rotate(180deg);
-    }
-
-    .sources-list {
-        list-style: none;
-        margin: 0;
-        padding: 0 12px 8px;
+    .source-popover {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: hsl(var(--card));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 10px;
+        padding: 10px 14px;
+        min-width: 200px;
+        max-width: 280px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        z-index: 50;
         display: flex;
         flex-direction: column;
         gap: 4px;
+        animation: popover-in 0.12s ease-out;
     }
 
-    .source-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
-        padding: 3px 0;
+    .source-popover::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(255, 255, 255, 0.12);
     }
 
-    .source-name {
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.6);
+    @keyframes popover-in {
+        from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(4px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
     }
 
-    .source-link {
-        color: rgba(255, 255, 255, 0.3);
+    .popover-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.85);
+    }
+
+    .popover-time {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .popover-link {
         display: inline-flex;
         align-items: center;
-        transition: color 0.15s;
+        gap: 4px;
+        font-size: 11px;
+        color: hsl(var(--primary));
+        text-decoration: none;
+        margin-top: 2px;
+        transition: opacity 0.15s;
     }
 
-    .source-link:hover {
-        color: rgba(255, 255, 255, 0.7);
-    }
-
-    .source-time {
-        margin-left: auto;
-        font-size: 10px;
-        color: rgba(255, 255, 255, 0.3);
-        font-variant-numeric: tabular-nums;
+    .popover-link:hover {
+        opacity: 0.8;
     }
 </style>

@@ -13,6 +13,8 @@
     import Markdown from "./Markdown.svelte";
     import ContentBlockRenderer from "./blocks/ContentBlockRenderer.svelte";
     import ToolProgress from "./blocks/ToolProgress.svelte";
+    import SourcesBlock from "./blocks/SourcesBlock.svelte";
+    import type { SourcesBlock as SourcesBlockType } from "$lib/types/contentBlock";
 
     let copiedIndex = $state<number | null>(null);
     const modeLabel: Record<string, string> = {
@@ -139,13 +141,22 @@
                             {/if}
 
                             {#if message.role === "assistant"}
-                                {#if message.contentBlocks?.length}
-                                    {#each message.contentBlocks as block}
+                                {@const sourcesBlock = message.contentBlocks?.find((b): b is SourcesBlockType => b.type === 'sources')}
+                                {@const otherBlocks = message.contentBlocks?.filter((b) => b.type !== 'sources')}
+                                {#if otherBlocks?.length}
+                                    {#each otherBlocks as block}
                                         <ContentBlockRenderer {block} />
                                     {/each}
                                 {/if}
                                 {#if message.content}
-                                    <Markdown content={message.content} />
+                                    <div class="inline-sources-row">
+                                        <Markdown content={message.content} />
+                                        {#if sourcesBlock}
+                                            <SourcesBlock sources={sourcesBlock.sources} />
+                                        {/if}
+                                    </div>
+                                {:else if sourcesBlock}
+                                    <SourcesBlock sources={sourcesBlock.sources} />
                                 {/if}
                                 {#if message.toolCalls?.some((t) => t.status === "running")}
                                     <ToolProgress tools={message.toolCalls} />

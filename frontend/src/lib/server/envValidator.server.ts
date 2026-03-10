@@ -4,6 +4,7 @@
  */
 
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 
 export type EnvValidationResult = {
     valid: boolean;
@@ -12,6 +13,9 @@ export type EnvValidationResult = {
 };
 
 function getEnv(key: string): string | undefined {
+    if (key.startsWith('PUBLIC_')) {
+        return (publicEnv as Record<string, string | undefined>)[key];
+    }
     return (env as Record<string, string | undefined>)[key];
 }
 
