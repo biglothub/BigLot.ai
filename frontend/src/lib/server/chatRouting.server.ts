@@ -1,7 +1,7 @@
 import type { AgentMode } from '$lib/agent/systemPrompts';
 import type { AgentRouteType } from '$lib/types/contentBlock';
 
-type ChatMode = 'normal' | 'agent';
+type ChatMode = 'normal' | 'agent' | 'discussion';
 
 type RouteInput = {
 	chatMode: ChatMode;
@@ -21,7 +21,11 @@ const MULTI_STEP_SIGNALS = [
 	'macro',
 	'ทอง',
 	'gold',
-	'portfolio'
+	'portfolio',
+	'fomc',
+	'fed meeting',
+	'nfp',
+	'cpi report'
 ];
 
 const SINGLE_TOOL_SIGNALS = [
@@ -38,7 +42,13 @@ const SINGLE_TOOL_SIGNALS = [
 	'cot',
 	'xau',
 	'btc',
-	'eth'
+	'eth',
+	'news',
+	'ข่าว',
+	'search',
+	'ค้นหา',
+	'event',
+	'เหตุการณ์'
 ];
 
 const LATIN_RE = /^[a-z0-9]/i;

@@ -12,6 +12,8 @@ import {
 	upsertAgentStepRun
 } from '$lib/server/agentObservability.server';
 import { classifyChatRoute, shouldEnablePlanning } from '$lib/server/chatRouting.server';
+import { getMemoryContext } from '$lib/server/memory.server';
+import { setMemoryToolUserId } from '$lib/server/tools/memory.tool';
 import type { AgentRouteType, ContentBlock } from '$lib/types/contentBlock';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -116,11 +118,17 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
         );
     }
 
+    // Set user ID for memory tools (before agent loop executes tools)
+    setMemoryToolUserId(biglotUserId);
+
+    // Fetch user memory context for personalization
+    const memoryContext = biglotUserId ? await getMemoryContext(biglotUserId).catch(() => null) : null;
+
     // Build formatted messages for OpenAI
     const formattedMessages: ChatCompletionMessageParam[] = [
         {
             role: 'system',
-            content: systemPrompt
+            content: memoryContext ? `${systemPrompt}\n\n${memoryContext}` : systemPrompt
         },
         ...safeMessages.map((m): ChatCompletionMessageParam => {
             if (m.role === 'user' && m.image_url) {
@@ -190,6 +198,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         messages: formattedMessages,
                         maxIterations: 5,
                         planningEnabled,
+                        currentMode: mode,
                         callbacks: {
                             onTextDelta: (text) => {
                                 streamedText += text;
@@ -253,6 +262,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                             },
                             onPlanComplete: (planId, status) => {
                                 controller.enqueue(encoder.encode(sseEvent('plan_complete', { planId, status })));
+                            },
+                            onHandoff: (targetMode, reason) => {
+                                controller.enqueue(encoder.encode(sseEvent('agent_handoff', { targetMode, reason })));
                             },
                             onError: (message) => {
                                 controller.enqueue(encoder.encode(sseEvent('error', { message })));

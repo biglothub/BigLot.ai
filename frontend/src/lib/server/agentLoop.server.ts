@@ -15,6 +15,10 @@ import './tools/gold.tool';
 import './tools/macro.tool';
 import './tools/cot.tool';
 import './tools/crossAsset.tool';
+import './tools/webSearch.tool';
+import './tools/memory.tool';
+import './tools/handoff.tool';
+import { getSystemPrompt, normalizeAgentMode, type AgentMode } from '$lib/agent/systemPrompts';
 
 export type AgentCallbacks = {
 	onTextDelta: (text: string) => void;
@@ -29,6 +33,7 @@ export type AgentCallbacks = {
 		stepMeta?: { title?: string; toolName?: string }
 	) => void;
 	onPlanComplete: (planId: string, status: 'complete' | 'error') => void;
+	onHandoff: (targetMode: string, reason: string) => void;
 	onError: (message: string) => void;
 };
 
@@ -38,6 +43,7 @@ export type AgentLoopConfig = {
 	messages: ChatCompletionMessageParam[];
 	maxIterations?: number;
 	planningEnabled?: boolean;
+	currentMode?: AgentMode;
 	callbacks: AgentCallbacks;
 };
 
@@ -271,10 +277,54 @@ function appendSourcesBlock(blocks: ContentBlock[], sources: DataSource[]): void
 }
 
 /**
+ * Check if tool calls include a handoff request and apply it.
+ * Returns the target mode if handoff was requested, null otherwise.
+ */
+function detectHandoff(
+	toolCalls: ParsedToolCall[],
+	callbacks: AgentCallbacks
+): { targetMode: AgentMode; reason: string; contextSummary: string } | null {
+	const handoffCall = toolCalls.find((tc) => tc.name === 'handoff_to_agent');
+	if (!handoffCall) return null;
+
+	let args: Record<string, unknown> = {};
+	try {
+		args = JSON.parse(handoffCall.arguments || '{}');
+	} catch {
+		args = {};
+	}
+
+	const targetMode = normalizeAgentMode(args.target_mode);
+	const reason = typeof args.reason === 'string' ? args.reason : 'Switching specialist';
+	const contextSummary = typeof args.context_summary === 'string' ? args.context_summary : '';
+
+	return { targetMode, reason, contextSummary };
+}
+
+/**
+ * Apply a handoff: swap the system prompt in the messages array.
+ */
+function applyHandoff(
+	messages: ChatCompletionMessageParam[],
+	targetMode: AgentMode,
+	planningEnabled: boolean,
+	contextSummary: string
+): void {
+	const newSystemPrompt = getSystemPrompt(targetMode, planningEnabled);
+
+	// Replace the first system message (system prompt)
+	if (messages.length > 0 && messages[0].role === 'system') {
+		const suffix = contextSummary ? `\n\n[Handoff Context]: ${contextSummary}` : '';
+		messages[0] = { role: 'system', content: newSystemPrompt + suffix };
+	}
+}
+
+/**
  * Main agent loop with Manus-like planning support.
  */
 export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBlock[]> {
 	const { client, apiModel, callbacks, maxIterations = 5, planningEnabled = false } = config;
+	let currentMode = config.currentMode ?? 'coach';
 	const messages = [...config.messages];
 	const allContentBlocks: ContentBlock[] = [];
 	const collectedSources: DataSource[] = [];
@@ -288,6 +338,41 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 		tools,
 		(text) => callbacks.onTextDelta(text)
 	);
+
+	// Check if model requested a handoff
+	const handoff = detectHandoff(toolCalls, callbacks);
+	if (handoff) {
+		callbacks.onHandoff(handoff.targetMode, handoff.reason);
+		applyHandoff(messages, handoff.targetMode, planningEnabled, handoff.contextSummary);
+		currentMode = handoff.targetMode;
+
+		// Provide tool result for the handoff call so the model can continue
+		const handoffCall = toolCalls.find((tc) => tc.name === 'handoff_to_agent')!;
+		messages.push({
+			role: 'assistant',
+			content: fullText || null,
+			tool_calls: [{
+				id: handoffCall.id,
+				type: 'function' as const,
+				function: { name: 'handoff_to_agent', arguments: handoffCall.arguments }
+			}]
+		});
+		messages.push({
+			role: 'tool',
+			tool_call_id: handoffCall.id,
+			content: `Handoff complete. You are now in "${handoff.targetMode}" mode. Reason: ${handoff.reason}. Continue responding to the user's query in this new mode.`
+		} as ChatCompletionMessageParam);
+
+		// Re-run LLM with the new mode's system prompt — recurse with reduced iterations
+		const handoffResult = await runAgentLoop({
+			...config,
+			messages,
+			currentMode: handoff.targetMode,
+			maxIterations: Math.max(maxIterations - 1, 2),
+			callbacks
+		});
+		return handoffResult;
+	}
 
 	// Check if model called create_plan
 	const planCall = planningEnabled
@@ -451,7 +536,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 	});
 
 	for (const tc of toolCalls) {
-		if (tc.name === 'create_plan') continue; // Skip if planning wasn't enabled
+		if (tc.name === 'create_plan' || tc.name === 'handoff_to_agent') continue; // Skip pseudo-tools
 
 		const toolCallId = tc.id || `${tc.name}_${Date.now()}`;
 		let parsedArgs: Record<string, unknown> = {};

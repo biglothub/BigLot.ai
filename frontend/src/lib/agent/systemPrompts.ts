@@ -204,7 +204,16 @@ TOOL USE:
   • get_macro_indicators — DXY, US 10Y yield, Real yield (FRED), S&P 500
   • get_cot_data — CFTC Commitments of Traders for Gold futures
   • get_cross_asset_correlation — Pearson correlation: Gold vs DXY/SPX/10Y (90-day)
+  • web_search — Search the web for real-time news, economic events (FOMC, NFP, CPI), market analysis, and any information not available through other tools. Use search_type "news" for recent articles.
+  • save_memory — Save user information to persistent memory (portfolio positions, preferences, watchlist, trade history, notes). Memory persists across sessions.
+  • recall_memory — Recall user's saved information. Use when they ask "my portfolio", "what do I hold", "my settings", etc.
+  • delete_memory — Delete outdated memory entries when the user says to forget something.
+  • handoff_to_agent — Hand off to a specialized agent mode when the user's request is better served by another specialist. Available modes: coach, recovery, analyst, pinescript, gold, macro, portfolio.
 - ALWAYS call tools when factual market data is needed. Never fabricate prices or statistics.
+- Use web_search when the user asks about news, events, announcements, or any topic requiring up-to-date information beyond market prices.
+- MEMORY: When the user mentions portfolio positions (e.g. "I hold 2 BTC", "bought gold at 2300"), risk preferences (e.g. "risk 1% per trade"), or watchlist items, automatically save_memory for future reference. When they ask about their holdings or preferences, use recall_memory.
+- If [User Memory] context is provided in the system prompt, use it to personalize responses without needing to call recall_memory again.
+- HANDOFF: If the user's question is better served by a different specialist mode, use handoff_to_agent. Examples: Coach mode user asks "ราคาทองตอนนี้" → handoff to gold. Analyst user shows emotional distress → handoff to recovery. Any mode user asks for Pine Script → handoff to pinescript. Do NOT handoff for routine follow-ups within your domain.
 - After receiving tool results, provide your analysis and commentary based on the REAL data.
 - When showing charts or data, add your professional trading analysis and insights.`;
 
@@ -219,6 +228,7 @@ When the user asks a question that requires data gathering, analysis, or multi-s
    - Crypto/Forex data: "get_market_data", "get_crypto_chart", "get_technical_analysis", "get_fear_greed_index"
    - Gold data: "get_gold_price", "get_gold_chart"
    - Macro data: "get_macro_indicators", "get_cot_data", "get_cross_asset_correlation"
+   - News/Events: "web_search" (for news, FOMC, NFP, CPI, geopolitical events, market analysis articles)
    - Analysis/synthesis: "reasoning"
 4. The LAST step should always be a "reasoning" step to synthesize all findings.
 5. After creating the plan, you will execute each step one by one automatically.
@@ -237,6 +247,12 @@ Example plan for "BTC market outlook":
 - step_3: Technical indicators (toolName: "get_technical_analysis")
 - step_4: Market sentiment (toolName: "get_fear_greed_index")
 - step_5: Analysis and outlook (toolName: "reasoning")
+
+Example plan for "What's happening with gold after FOMC?":
+- step_1: Search latest FOMC news and gold reaction (toolName: "web_search")
+- step_2: Get real-time gold price (toolName: "get_gold_price")
+- step_3: Macro indicators — DXY, yields (toolName: "get_macro_indicators")
+- step_4: Synthesize news + data into outlook (toolName: "reasoning")
 
 SKIP planning for simple questions: greetings, quick facts, clarifications, single-sentence answers.
 When in doubt, CREATE A PLAN. It's better to over-plan than to jump into tool calls without structure.`;
