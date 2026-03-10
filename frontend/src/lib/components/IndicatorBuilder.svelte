@@ -1572,7 +1572,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         color: #f1f5f9;
         overflow-x: hidden;
         overflow-y: auto;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        font-family: var(--font-sans);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
@@ -1615,7 +1615,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .eyebrow {
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.6rem;
         font-weight: 600;
         letter-spacing: 0.28em;
@@ -1629,7 +1629,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         align-items: baseline;
         gap: 0.65rem;
         margin: 0;
-        font-family: 'Outfit', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 1.5rem;
         font-weight: 700;
         line-height: 1.1;
@@ -1644,7 +1644,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .title-sub {
-        font-family: 'JetBrains Mono', monospace;
+        font-family: var(--font-mono);
         font-size: 0.75rem;
         font-weight: 500;
         color: rgba(255, 255, 255, 0.28);
@@ -1680,7 +1680,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .metric-chip span {
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.58rem;
         font-weight: 500;
         text-transform: uppercase;
@@ -1689,7 +1689,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .metric-chip strong {
-        font-family: 'Outfit', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 1rem;
         font-weight: 700;
         color: #f1f5f9;
@@ -1758,7 +1758,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .panel-label {
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.6rem;
         font-weight: 600;
         letter-spacing: 0.2em;
@@ -1775,7 +1775,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         border: 1px solid rgba(245, 158, 11, 0.14);
         background: rgba(245, 158, 11, 0.06);
         color: rgba(245, 158, 11, 0.85);
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.66rem;
         font-weight: 600;
         white-space: nowrap;
@@ -1821,7 +1821,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .library-head h2,
     .shortcut-head h3 {
         margin: 0;
-        font-family: 'Outfit', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 1.12rem;
         font-weight: 700;
         color: #f1f5f9;
@@ -1869,7 +1869,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
             rgba(0, 0, 0, 0.5);
         padding: 1rem 1.1rem;
         color: #e2e8f0;
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.88rem;
         font-weight: 400;
         line-height: 1.7;
@@ -1919,7 +1919,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .guidance-title {
         display: block;
         margin-bottom: 0.45rem;
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.62rem;
         font-weight: 600;
         letter-spacing: 0.18em;
@@ -1950,7 +1950,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .template-group-label {
-        font-family: 'Outfit', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.68rem;
         font-weight: 600;
         text-transform: uppercase;
@@ -1970,7 +1970,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         border: 1px solid rgba(255, 255, 255, 0.06);
         background: rgba(255, 255, 255, 0.02);
         color: rgba(255, 255, 255, 0.55);
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.76rem;
         font-weight: 400;
         line-height: 1.4;
@@ -2033,7 +2033,8 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         display: block;
         font-size: 0.88rem;
         font-weight: 600;
-        color: #f8fafc;
+        color: #e2e8f0;
+        letter-spacing: -0.01em;
     }
 
     .shortcut-meta,
@@ -2042,8 +2043,10 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         flex-wrap: wrap;
         gap: 0.55rem;
         margin-top: 0.25rem;
-        font-size: 0.72rem;
-        color: rgba(255, 255, 255, 0.42);
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.35);
     }
 
     .workspace-head {
@@ -2063,16 +2066,21 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .workspace-status-label {
-        font-size: 0.65rem;
+        font-family: var(--font-sans);
+        font-size: 0.58rem;
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: rgba(255, 255, 255, 0.42);
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.35);
     }
 
     .workspace-status-card strong {
-        font-size: 0.88rem;
-        color: #f8fafc;
+        font-family: var(--font-sans);
+        font-size: 0.86rem;
+        font-weight: 600;
+        color: #e2e8f0;
         line-height: 1.4;
+        letter-spacing: -0.01em;
     }
 
     .workspace-actions {
@@ -2100,7 +2108,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         border: 1px solid rgba(255, 255, 255, 0.07);
         background: rgba(255, 255, 255, 0.03);
         color: rgba(255, 255, 255, 0.65);
-        font-family: 'Inter', system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-size: 0.78rem;
         font-weight: 500;
         letter-spacing: 0.005em;
@@ -2174,24 +2182,29 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
 
     .empty-label {
         display: inline-block;
-        margin-bottom: 0.55rem;
-        font-size: 0.66rem;
-        font-weight: 700;
+        margin-bottom: 0.5rem;
+        font-family: var(--font-sans);
+        font-size: 0.6rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: rgba(245, 158, 11, 0.7);
+        letter-spacing: 0.18em;
+        color: rgba(245, 158, 11, 0.55);
     }
 
     .empty-card h3 {
         margin: 0;
+        font-family: var(--font-sans);
         font-size: 0.92rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
     }
 
     .empty-card p {
-        margin: 0.45rem 0 0;
-        font-size: 0.8rem;
-        color: rgba(255, 255, 255, 0.52);
-        line-height: 1.55;
+        margin: 0.4rem 0 0;
+        font-size: 0.78rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.42);
+        line-height: 1.6;
     }
 
     .generating-stage {
@@ -2234,14 +2247,18 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
 
     .generating-copy h3 {
         margin: 0.2rem 0 0;
+        font-family: var(--font-sans);
         font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
     }
 
     .generating-copy p {
-        margin: 0.55rem 0 0;
-        font-size: 0.84rem;
-        color: rgba(255, 255, 255, 0.56);
-        line-height: 1.55;
+        margin: 0.5rem 0 0;
+        font-size: 0.82rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.45);
+        line-height: 1.6;
     }
 
     .workspace-error,
@@ -2284,16 +2301,18 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .review-tabs button {
         display: inline-flex;
         align-items: center;
-        gap: 0.45rem;
-        padding: 0.75rem 0.95rem;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.03);
-        color: rgba(255, 255, 255, 0.56);
-        font-size: 0.8rem;
-        font-weight: 600;
+        gap: 0.4rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.025);
+        color: rgba(255, 255, 255, 0.48);
+        font-family: var(--font-sans);
+        font-size: 0.76rem;
+        font-weight: 500;
+        letter-spacing: 0.005em;
         cursor: pointer;
-        transition: all 0.18s ease;
+        transition: all 0.2s ease;
     }
 
     .review-tabs button:hover,
@@ -2317,7 +2336,10 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
 
     .review-panel-head h3 {
         margin: 0.2rem 0 0;
+        font-family: var(--font-sans);
         font-size: 0.98rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
     }
 
     .code-panel {
@@ -2329,7 +2351,7 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
         background: rgba(0, 0, 0, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.06);
         color: #cbd5e1;
-        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-family: var(--font-mono);
         font-size: 0.76rem;
         line-height: 1.7;
         letter-spacing: -0.01em;
@@ -2346,7 +2368,8 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .table-shell table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.76rem;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
     }
 
     .table-shell th,
@@ -2416,10 +2439,12 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .metadata-card span,
     .console-stat span {
         display: block;
-        font-size: 0.65rem;
+        font-family: var(--font-sans);
+        font-size: 0.58rem;
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: rgba(255, 255, 255, 0.38);
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.32);
         margin-bottom: 0.42rem;
     }
 
@@ -2427,9 +2452,12 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .metadata-card strong,
     .console-stat strong {
         display: block;
-        color: #f8fafc;
+        font-family: var(--font-sans);
+        color: #e2e8f0;
         font-size: 0.88rem;
+        font-weight: 600;
         line-height: 1.45;
+        letter-spacing: -0.01em;
     }
 
     .config-grid {
@@ -2525,17 +2553,21 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     }
 
     .console-entry-message {
-        font-size: 0.8rem;
-        color: rgba(255, 255, 255, 0.78);
-        line-height: 1.5;
+        font-size: 0.79rem;
+        font-weight: 400;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.55;
         word-break: break-word;
+        letter-spacing: 0.005em;
     }
 
     .console-entry-meta {
         margin-top: 0.22rem;
-        font-size: 0.66rem;
-        letter-spacing: 0.04em;
-        color: rgba(255, 255, 255, 0.34);
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        color: rgba(255, 255, 255, 0.28);
     }
 
     .console-idle {
@@ -2660,7 +2692,10 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
 
     .db-warning-head h2 {
         margin: 0;
+        font-family: var(--font-sans);
         font-size: 1.3rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
     }
 
     .db-warning-head p,
@@ -2678,12 +2713,14 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;`,
     .db-sql {
         margin: 0;
         padding: 1rem;
-        border-radius: 18px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: #050505;
-        color: rgba(245, 158, 11, 0.9);
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(0, 0, 0, 0.6);
+        color: rgba(245, 158, 11, 0.85);
         overflow: auto;
-        font-size: 0.76rem;
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        line-height: 1.7;
     }
 
     .db-sql-wrap .mini-action {

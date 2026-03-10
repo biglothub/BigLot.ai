@@ -431,6 +431,7 @@
                     </div>
                 </div>
             </div>
+
         </div>
     {/if}
 </div>
@@ -619,7 +620,6 @@
     .dash-macro { grid-column: 1 / -1; grid-row: 2; }
     .dash-cot { grid-column: 1; grid-row: 3; }
     .dash-signal { grid-column: 2; grid-row: 3; }
-
     .chart-panel,
     .cot-panel,
     .signal-panel {

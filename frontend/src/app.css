@@ -33,7 +33,8 @@
 }
 
 @theme {
-    --font-sans: 'Outfit', 'Inter', system-ui, sans-serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+    --font-mono: 'SF Mono', ui-monospace, SFMono-Regular, 'Menlo', 'Consolas', monospace;
 
     --color-background: var(--background);
     --color-foreground: var(--foreground);
