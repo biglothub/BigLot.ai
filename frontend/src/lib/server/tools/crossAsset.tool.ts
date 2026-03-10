@@ -191,7 +191,8 @@ registerTool({
 					rows: tableRows
 				}
 			],
-			textSummary: `Cross-Asset Correlation (90D): ${summaryParts.join(', ')}. Note: Gold typically shows negative correlation with DXY and real yields.`
+			textSummary: `Cross-Asset Correlation (90D): ${summaryParts.join(', ')}. Note: Gold typically shows negative correlation with DXY and real yields.`,
+			sources: [{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() }]
 		};
 
 		toolCache.set(cacheKey, result, 60 * 60_000); // cache 1hr

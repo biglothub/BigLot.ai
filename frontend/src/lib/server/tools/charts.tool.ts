@@ -260,7 +260,8 @@ registerTool({
 						data: ohlcv
 					}
 				],
-				textSummary: `${displaySymbol} ${interval} chart: ${ohlcv.length} candles, Latest close: ${lastCandle.close}, Price change over period: ${priceChange.toFixed(2)}%, High: ${Math.max(...ohlcv.map((c) => c.high)).toFixed(2)}, Low: ${Math.min(...ohlcv.map((c) => c.low)).toFixed(2)}`
+				textSummary: `${displaySymbol} ${interval} chart: ${ohlcv.length} candles, Latest close: ${lastCandle.close}, Price change over period: ${priceChange.toFixed(2)}%, High: ${Math.max(...ohlcv.map((c) => c.high)).toFixed(2)}, Low: ${Math.min(...ohlcv.map((c) => c.low)).toFixed(2)}`,
+				sources: [{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() }]
 			};
 
 			toolCache.set(cacheKey, result, 60_000);
@@ -321,7 +322,8 @@ registerTool({
 					data: ohlcv
 				}
 			],
-			textSummary: `${symbol} ${interval} chart: ${ohlcv.length} candles, Latest close: ${lastCandle?.close ?? 'N/A'}, Price change over period: ${priceChange.toFixed(2)}%, High: ${Math.max(...ohlcv.map((c) => c.high)).toFixed(2)}, Low: ${Math.min(...ohlcv.map((c) => c.low)).toFixed(2)}`
+			textSummary: `${symbol} ${interval} chart: ${ohlcv.length} candles, Latest close: ${lastCandle?.close ?? 'N/A'}, Price change over period: ${priceChange.toFixed(2)}%, High: ${Math.max(...ohlcv.map((c) => c.high)).toFixed(2)}, Low: ${Math.min(...ohlcv.map((c) => c.low)).toFixed(2)}`,
+			sources: [{ name: 'Binance API', url: 'https://api.binance.com', accessedAt: Date.now() }]
 		};
 
 		toolCache.set(cacheKey, result, 60_000);
@@ -595,7 +597,8 @@ registerTool({
 					rows: [['Current Price', lastClose?.toFixed(2) ?? 'N/A'], ...tableRows]
 				}
 			],
-			textSummary: `${symbol} ${interval} Technical Analysis: Price ${lastClose?.toFixed(2)}, ${summaryParts.join(', ')}`
+			textSummary: `${symbol} ${interval} Technical Analysis: Price ${lastClose?.toFixed(2)}, ${summaryParts.join(', ')}`,
+			sources: [{ name: isForex ? 'Yahoo Finance' : 'Binance API', url: isForex ? 'https://finance.yahoo.com' : 'https://api.binance.com', accessedAt: Date.now() }]
 		};
 
 		toolCache.set(cacheKey, result, 60_000);

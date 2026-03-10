@@ -73,7 +73,8 @@ registerTool({
 					}
 				]
 			}],
-			textSummary: `Gold COT (${cot.reportDate}): Net Spec ${fmtK(cot.netSpec)} (${cot.classification}), WoW ${fmtK(cot.wowChange)}, Commercial Net ${fmtK(cot.netComm)}. Contrarian signal: ${cot.signal === 'up' ? 'Bullish' : cot.signal === 'down' ? 'Bearish' : 'Neutral'}.`
+			textSummary: `Gold COT (${cot.reportDate}): Net Spec ${fmtK(cot.netSpec)} (${cot.classification}), WoW ${fmtK(cot.wowChange)}, Commercial Net ${fmtK(cot.netComm)}. Contrarian signal: ${cot.signal === 'up' ? 'Bullish' : cot.signal === 'down' ? 'Bearish' : 'Neutral'}.`,
+			sources: [{ name: 'CFTC Commitments of Traders', url: 'https://www.cftc.gov/MarketReports/CommitmentsofTraders', accessedAt: Date.now() }]
 		};
 
 		toolCache.set(cacheKey, result, 24 * 3_600_000);

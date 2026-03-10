@@ -92,7 +92,11 @@ registerTool({
 				realYield !== null ? `Real Yield: ${realYield.toFixed(2)}%` : '',
 				spx ? `SPX: ${spx.price.toFixed(0)} (${fmtChange(spx.change)})` : '',
 				`Gold Macro: ${goldSignal} — ${goldContext}`
-			].filter(Boolean).join('. ')
+			].filter(Boolean).join('. '),
+			sources: [
+				{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() },
+				{ name: 'FRED (Federal Reserve)', url: 'https://fred.stlouisfed.org', accessedAt: Date.now() }
+			]
 		};
 
 		toolCache.set(cacheKey, result, 5 * 60_000);

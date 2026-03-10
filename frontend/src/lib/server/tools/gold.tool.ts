@@ -83,7 +83,12 @@ registerTool({
 				title: `Gold Price — ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} ICT`,
 				metrics
 			}],
-			textSummary: `Gold: COMEX $${gold.spotPrice.toFixed(2)}/oz (${gold.change24hPct >= 0 ? '+' : ''}${gold.change24hPct.toFixed(2)}% 24h). Thai gold price: ฿${gold.thaiGoldPrice.toFixed(0)}/บาทน้ำหนัก. USD/THB: ${gold.thbRate.toFixed(2)}. ${gold.comexHigh52w ? `52W range: $${gold.comexLow52w?.toFixed(2)}–$${gold.comexHigh52w?.toFixed(2)}` : ''}`
+			textSummary: `Gold: COMEX $${gold.spotPrice.toFixed(2)}/oz (${gold.change24hPct >= 0 ? '+' : ''}${gold.change24hPct.toFixed(2)}% 24h). Thai gold price: ฿${gold.thaiGoldPrice.toFixed(0)}/บาทน้ำหนัก. USD/THB: ${gold.thbRate.toFixed(2)}. ${gold.comexHigh52w ? `52W range: $${gold.comexLow52w?.toFixed(2)}–$${gold.comexHigh52w?.toFixed(2)}` : ''}`,
+			sources: [
+				{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() },
+				{ name: 'Binance API', url: 'https://api.binance.com', accessedAt: Date.now() },
+				{ name: 'Exchange Rates API', url: 'https://open.er-api.com', accessedAt: Date.now() }
+			]
 		};
 
 		toolCache.set(cacheKey, result, 60_000);
@@ -141,6 +146,8 @@ registerTool({
 			}],
 			textSummary: `Gold (GC=F) ${timeframe} chart: ${ohlcv.length} candles. Latest close: $${lastCandle.close.toFixed(2)}. Period change: ${periodChange >= 0 ? '+' : ''}${periodChange.toFixed(2)}%. High: $${Math.max(...ohlcv.map(c => c.high)).toFixed(2)}, Low: $${Math.min(...ohlcv.map(c => c.low)).toFixed(2)}.`
 		};
+
+		toolResult.sources = [{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() }];
 
 		const cacheTtl = timeframe === '1d' ? 60_000 : timeframe === '1wk' ? 300_000 : 600_000;
 		toolCache.set(cacheKey, toolResult, cacheTtl);

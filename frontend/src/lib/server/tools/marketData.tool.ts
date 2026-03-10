@@ -117,7 +117,8 @@ registerTool({
 						]
 					}
 				],
-				textSummary: `${name} (${sym}): Price $${formatNum(price)} (${changeStr} 24h), 24h Range $${formatNum(low24h)} - $${formatNum(high24h)}, Prev Close $${formatNum(previousClose)}`
+				textSummary: `${name} (${sym}): Price $${formatNum(price)} (${changeStr} 24h), 24h Range $${formatNum(low24h)} - $${formatNum(high24h)}, Prev Close $${formatNum(previousClose)}`,
+				sources: [{ name: 'Yahoo Finance', url: 'https://finance.yahoo.com', accessedAt: Date.now() }]
 			};
 
 			toolCache.set(cacheKey, result, 60_000);
@@ -173,7 +174,8 @@ registerTool({
 function processMarketResponse(
 	data: Record<string, unknown>,
 	vsCurrency: string,
-	cacheKey: string
+	cacheKey: string,
+	sources?: ToolResult['sources']
 ): ToolResult {
 	const md = data.market_data as Record<string, Record<string, number>> | undefined;
 	if (!md) {
@@ -235,7 +237,8 @@ function processMarketResponse(
 				]
 			}
 		],
-		textSummary: `${name} (${sym}): Price $${formatNum(price)} ${currSym} (${changeStr} 24h), Volume $${formatNum(volume)}, Market Cap $${formatNum(marketCap)}, 24h Range $${formatNum(low24h)} - $${formatNum(high24h)}, ATH $${formatNum(ath)} (${athChange.toFixed(1)}% from ATH)`
+		textSummary: `${name} (${sym}): Price $${formatNum(price)} ${currSym} (${changeStr} 24h), Volume $${formatNum(volume)}, Market Cap $${formatNum(marketCap)}, 24h Range $${formatNum(low24h)} - $${formatNum(high24h)}, ATH $${formatNum(ath)} (${athChange.toFixed(1)}% from ATH)`,
+		sources: sources ?? [{ name: 'CoinGecko API', url: 'https://api.coingecko.com', accessedAt: Date.now() }]
 	};
 
 	toolCache.set(cacheKey, result, 60_000); // cache 60s
@@ -332,7 +335,8 @@ registerTool({
 					]
 				}
 			],
-			textSummary: `Crypto Fear & Greed Index: ${value}/100 (${classification})${entries.length > 1 ? `, Yesterday: ${entries[1].value}/100 (${entries[1].value_classification})` : ''}`
+			textSummary: `Crypto Fear & Greed Index: ${value}/100 (${classification})${entries.length > 1 ? `, Yesterday: ${entries[1].value}/100 (${entries[1].value_classification})` : ''}`,
+			sources: [{ name: 'Alternative.me API', url: 'https://alternative.me', accessedAt: Date.now() }]
 		};
 
 		toolCache.set(cacheKey, result, 10 * 60 * 1000); // cache 10 minutes
