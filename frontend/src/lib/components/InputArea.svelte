@@ -10,7 +10,10 @@
         GripHorizontal,
         Zap,
         MessageSquare,
+        Users,
+        Square,
     } from "lucide-svelte";
+    import type { ChatMode } from "$lib/state/chat.svelte";
     import { chatState } from "$lib/state/chat.svelte";
     import { onMount } from "svelte";
 
@@ -65,7 +68,9 @@
     }
 
     function toggleChatMode() {
-        chatState.setChatMode(chatState.chatMode === 'normal' ? 'agent' : 'normal');
+        const modes: ChatMode[] = ['normal', 'agent', 'discussion'];
+        const idx = modes.indexOf(chatState.chatMode);
+        chatState.setChatMode(modes[(idx + 1) % modes.length]);
     }
 
     // Global keyboard shortcuts
@@ -131,12 +136,21 @@
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 mb-0.5 border
                 {chatState.chatMode === 'agent'
                     ? 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
-                    : 'bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground'}"
-            title={chatState.chatMode === 'agent' ? 'Agent Mode (GPT-4o) - Click to switch to Normal' : 'Normal Mode (DeepSeek) - Click to switch to Agent'}
+                    : chatState.chatMode === 'discussion'
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30'
+                        : 'bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground'}"
+            title={chatState.chatMode === 'agent'
+                ? 'Agent Mode - Click to switch to Discussion'
+                : chatState.chatMode === 'discussion'
+                    ? 'Discussion Mode - Click to switch to Normal'
+                    : 'Normal Mode - Click to switch to Agent'}
         >
             {#if chatState.chatMode === 'agent'}
                 <Zap size={14} />
                 <span>Agent</span>
+            {:else if chatState.chatMode === 'discussion'}
+                <Users size={14} />
+                <span>Discussion</span>
             {:else}
                 <MessageSquare size={14} />
                 <span>Normal</span>
@@ -156,21 +170,26 @@
 
         <!-- Right Actions -->
         <div class="flex items-center gap-1 mb-0.5">
-            <button
-                onclick={handleSend}
-                class="p-2.5 rounded-full transition-all duration-200
-          {(input.trim() || chatState.selectedImage) && !chatState.isLoading
-                    ? 'bg-primary text-secondary font-bold hover:opacity-90'
-                    : 'bg-white/5 text-muted-foreground cursor-not-allowed'}"
-                disabled={(!input.trim() && !chatState.selectedImage) ||
-                    chatState.isLoading}
-            >
-                {#if chatState.isLoading}
-                    <Loader2 size={18} class="animate-spin" />
-                {:else}
+            {#if chatState.isLoading}
+                <button
+                    onclick={() => chatState.stopGeneration()}
+                    class="p-2.5 rounded-full transition-all duration-200 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                    title="Stop generation"
+                >
+                    <Square size={16} fill="currentColor" />
+                </button>
+            {:else}
+                <button
+                    onclick={handleSend}
+                    class="p-2.5 rounded-full transition-all duration-200
+              {(input.trim() || chatState.selectedImage)
+                        ? 'bg-primary text-secondary font-bold hover:opacity-90'
+                        : 'bg-white/5 text-muted-foreground cursor-not-allowed'}"
+                    disabled={!input.trim() && !chatState.selectedImage}
+                >
                     <Send size={18} />
-                {/if}
-            </button>
+                </button>
+            {/if}
         </div>
     </div>
 

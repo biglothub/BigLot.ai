@@ -4,11 +4,12 @@ import type {
     AgentRouteType,
     ContentBlock,
     ToolCallStatus,
-    PlanBlock
+    PlanBlock,
+    DiscussionBlock
 } from '$lib/types/contentBlock';
 
 export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript' | 'gold' | 'macro' | 'portfolio';
-export type ChatMode = 'normal' | 'agent';
+export type ChatMode = 'normal' | 'agent' | 'discussion';
 export type ChatChannel = 'web' | 'telegram';
 
 export type Message = {
@@ -71,6 +72,7 @@ class ChatState {
     agentMode = $state<AgentMode>('coach');
     chatMode = $state<ChatMode>('normal');
     lastDbError = $state<string | null>(null);
+    private abortController: AbortController | null = null;
 
     biglotUserId = $state<string>('anonymous');
 
@@ -91,7 +93,7 @@ class ChatState {
         }
 
         const savedChatMode = localStorage.getItem(ChatState.CHAT_MODE_STORAGE_KEY);
-        if (savedChatMode === 'normal' || savedChatMode === 'agent') {
+        if (savedChatMode === 'normal' || savedChatMode === 'agent' || savedChatMode === 'discussion') {
             this.chatMode = savedChatMode;
         }
 
@@ -115,6 +117,14 @@ class ChatState {
         this.chatMode = mode;
         if (typeof localStorage === 'undefined') return;
         localStorage.setItem(ChatState.CHAT_MODE_STORAGE_KEY, mode);
+    }
+
+    stopGeneration() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
     }
 
     private generateBrowserUserId(): string {
@@ -432,6 +442,7 @@ class ChatState {
         this.isLoading = true;
 
         try {
+            this.abortController = new AbortController();
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -441,7 +452,8 @@ class ChatState {
                     messages: this.messages,
                     mode: this.agentMode,
                     chatMode: this.chatMode
-                })
+                }),
+                signal: this.abortController.signal
             });
 
             if (!response.ok) throw new Error('Failed to fetch');
@@ -473,7 +485,8 @@ class ChatState {
                             this.messages[msgIdx].routeType =
                                 data.routeType === 'direct_answer' ||
                                 data.routeType === 'single_tool' ||
-                                data.routeType === 'plan_then_execute'
+                                data.routeType === 'plan_then_execute' ||
+                                data.routeType === 'discussion'
                                     ? data.routeType
                                     : undefined;
                             break;
@@ -485,8 +498,18 @@ class ChatState {
                             break;
                         }
                         case 'text_delta': {
-                            fullText += data.content || '';
-                            this.messages[msgIdx].content = fullText;
+                            const discBlock = allBlocks.find(
+                                (b): b is DiscussionBlock => b.type === 'discussion'
+                            );
+                            if (discBlock && discBlock.status === 'running' && discBlock.turns.length > 0) {
+                                const currentTurn = discBlock.turns[discBlock.turns.length - 1];
+                                currentTurn.content += data.content || '';
+                                discBlock.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            } else {
+                                fullText += data.content || '';
+                                this.messages[msgIdx].content = fullText;
+                            }
                             break;
                         }
                         case 'tool_start': {
@@ -567,6 +590,41 @@ class ChatState {
                             }
                             break;
                         }
+                        case 'discussion_start': {
+                            const discBlock2 = data.block as DiscussionBlock;
+                            allBlocks.push(discBlock2);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            break;
+                        }
+                        case 'discussion_turn_start': {
+                            const disc = allBlocks.find(
+                                (b): b is DiscussionBlock => b.type === 'discussion'
+                            );
+                            if (disc) {
+                                disc.turns.push({
+                                    panelistId: data.panelistId,
+                                    round: data.round,
+                                    content: '',
+                                    model: data.model || '',
+                                    startedAt: Date.now()
+                                });
+                                disc.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
+                        case 'discussion_turn_end': {
+                            const disc2 = allBlocks.find(
+                                (b): b is DiscussionBlock => b.type === 'discussion'
+                            );
+                            if (disc2 && disc2.turns.length > 0) {
+                                const turn = disc2.turns[disc2.turns.length - 1];
+                                turn.completedAt = Date.now();
+                                disc2.updatedAt = Date.now();
+                                this.messages[msgIdx].contentBlocks = [...allBlocks];
+                            }
+                            break;
+                        }
                         case 'done': {
                             // Final content blocks from server
                             if (typeof data.runId === 'string') {
@@ -575,7 +633,8 @@ class ChatState {
                             if (
                                 data.routeType === 'direct_answer' ||
                                 data.routeType === 'single_tool' ||
-                                data.routeType === 'plan_then_execute'
+                                data.routeType === 'plan_then_execute' ||
+                                data.routeType === 'discussion'
                             ) {
                                 this.messages[msgIdx].routeType = data.routeType;
                             }
@@ -655,14 +714,31 @@ class ChatState {
                 }
             }
         } catch (error) {
-            console.error(error);
-            const last = this.messages[this.messages.length - 1];
-            if (last?.role === 'assistant' && last.content === '') {
-                last.content = 'Sorry, I encountered an error.';
+            // Don't show error message if user intentionally stopped
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                // Mark discussion block as complete if it was running
+                const last = this.messages[this.messages.length - 1];
+                if (last?.role === 'assistant' && last.contentBlocks) {
+                    const disc = last.contentBlocks.find(
+                        (b): b is DiscussionBlock => b.type === 'discussion'
+                    );
+                    if (disc && disc.status === 'running') {
+                        disc.status = 'complete';
+                        disc.updatedAt = Date.now();
+                        last.contentBlocks = [...last.contentBlocks];
+                    }
+                }
             } else {
-                this.messages.push({ role: 'assistant', content: 'Sorry, I encountered an error.', channel: 'web' });
+                console.error(error);
+                const last = this.messages[this.messages.length - 1];
+                if (last?.role === 'assistant' && last.content === '' && (!last.contentBlocks || last.contentBlocks.length === 0)) {
+                    last.content = 'Sorry, I encountered an error.';
+                } else if (!last || last.role !== 'assistant') {
+                    this.messages.push({ role: 'assistant', content: 'Sorry, I encountered an error.', channel: 'web' });
+                }
             }
         } finally {
+            this.abortController = null;
             this.isLoading = false;
         }
     }

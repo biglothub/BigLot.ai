@@ -5,6 +5,7 @@ import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
 import { getClientForModel, isAIModel } from '$lib/server/aiProvider.server';
 import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 import { runAgentLoop } from '$lib/server/agentLoop.server';
+import { runDiscussionLoop } from '$lib/server/discussionLoop.server';
 import {
 	createAgentRun,
 	logToolExecution,
@@ -79,22 +80,24 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
         .slice(-MAX_MESSAGES);
 
     const mode = normalizeAgentMode(payload?.mode);
-    const chatMode = payload?.chatMode === 'agent' ? 'agent' : 'normal';
+    const chatMode = payload?.chatMode === 'agent' ? 'agent' : payload?.chatMode === 'discussion' ? 'discussion' : 'normal';
     const latestUserMessage = [...safeMessages].reverse().find((m) => m.role === 'user');
     const lastUserMessage = latestUserMessage?.content ?? '';
-    const routeType: AgentRouteType = classifyChatRoute({
-        chatMode,
-        mode,
-        lastUserMessage,
-        hasImageInput: safeMessages.some((m) => m.role === 'user' && !!m.image_url)
-    });
+    const routeType: AgentRouteType = chatMode === 'discussion'
+        ? 'discussion'
+        : classifyChatRoute({
+              chatMode,
+              mode,
+              lastUserMessage,
+              hasImageInput: safeMessages.some((m) => m.role === 'user' && !!m.image_url)
+          });
     const planningEnabled = shouldEnablePlanning(chatMode, routeType);
     const systemPrompt = getSystemPrompt(mode, planningEnabled);
 
     // Select model based on chatMode — configurable via .env
     const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : 'deepseek';
     const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : 'gpt-4o';
-    const selectedModel = chatMode === 'agent' ? agentModel : normalModel;
+    const selectedModel = chatMode === 'agent' ? agentModel : chatMode === 'discussion' ? agentModel : normalModel;
 
     if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
         return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
@@ -290,6 +293,51 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     }
 
                     controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: allBlocks })));
+                } else if (chatMode === 'discussion') {
+                    // Discussion mode: 3 AI panelists debate
+                    const discussionBlocks = await runDiscussionLoop({
+                        topic: lastUserMessage,
+                        conversationHistory: formattedMessages,
+                        callbacks: {
+                            onDiscussionStart: (block) => {
+                                controller.enqueue(encoder.encode(sseEvent('discussion_start', { block })));
+                            },
+                            onTurnStart: (discussionId, panelistId, round, model) => {
+                                controller.enqueue(
+                                    encoder.encode(
+                                        sseEvent('discussion_turn_start', { discussionId, panelistId, round, model })
+                                    )
+                                );
+                            },
+                            onTextDelta: (text) => {
+                                streamedText += text;
+                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                            },
+                            onTurnEnd: (discussionId, panelistId, round) => {
+                                controller.enqueue(
+                                    encoder.encode(
+                                        sseEvent('discussion_turn_end', { discussionId, panelistId, round })
+                                    )
+                                );
+                            },
+                            onError: (message) => {
+                                controller.enqueue(encoder.encode(sseEvent('error', { message })));
+                            }
+                        }
+                    });
+
+                    await runIdPromise;
+                    if (runId) {
+                        await updateAgentRun({
+                            runId,
+                            status: 'complete',
+                            planUsed: false,
+                            toolCallCount: 0,
+                            textOutputLength: streamedText.length
+                        });
+                    }
+
+                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: discussionBlocks })));
                 } else {
                     // Normal mode: DeepSeek direct streaming, no tools
                     const stream = await client.chat.completions.create({

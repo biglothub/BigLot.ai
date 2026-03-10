@@ -148,6 +148,38 @@ export type TradeSetupBlock = {
 	timeframe: string;
 };
 
+// --- Discussion Block Types (multi-AI debate) ---
+
+export type DiscussionPanelistId = 'bull' | 'bear' | 'moderator';
+
+export type DiscussionPanelist = {
+	id: DiscussionPanelistId;
+	name: string;
+	model: string;
+	color: string;
+	emoji: string;
+};
+
+export type DiscussionTurn = {
+	panelistId: DiscussionPanelistId;
+	round: number; // 0=intro, 1-2=debate, 99=synthesis
+	content: string;
+	model: string;
+	startedAt: number;
+	completedAt?: number;
+};
+
+export type DiscussionBlock = {
+	type: 'discussion';
+	discussionId: string;
+	topic: string;
+	panelists: DiscussionPanelist[];
+	turns: DiscussionTurn[];
+	status: 'running' | 'complete' | 'error';
+	createdAt: number;
+	updatedAt: number;
+};
+
 // --- Sources Block (data provenance / citations) ---
 
 export type SourcesBlock = {
@@ -172,11 +204,12 @@ export type ContentBlock =
 	| GaugeBlock
 	| HeatmapBlock
 	| TradeSetupBlock
-	| SourcesBlock;
+	| SourcesBlock
+	| DiscussionBlock;
 
 export type ContentBlockType = ContentBlock['type'];
 
-export type AgentRouteType = 'direct_answer' | 'single_tool' | 'plan_then_execute';
+export type AgentRouteType = 'direct_answer' | 'single_tool' | 'plan_then_execute' | 'discussion';
 
 // --- Tool Call Status (for UI progress tracking) ---
 
@@ -197,7 +230,7 @@ export type SSERunStart = {
 	runId: string | null;
 	routeType: AgentRouteType;
 	mode: string;
-	chatMode: 'normal' | 'agent';
+	chatMode: 'normal' | 'agent' | 'discussion';
 	model: string;
 };
 
@@ -258,6 +291,21 @@ export type SSEPlanComplete = {
 	status: 'complete' | 'error';
 };
 
+export type SSEDiscussionTurnStart = {
+	event: 'discussion_turn_start';
+	discussionId: string;
+	panelistId: DiscussionPanelistId;
+	round: number;
+	model: string;
+};
+
+export type SSEDiscussionTurnEnd = {
+	event: 'discussion_turn_end';
+	discussionId: string;
+	panelistId: DiscussionPanelistId;
+	round: number;
+};
+
 export type SSEEvent =
 	| SSERunStart
 	| SSERunId
@@ -268,4 +316,6 @@ export type SSEEvent =
 	| SSEDone
 	| SSEPlanCreate
 	| SSEPlanUpdate
-	| SSEPlanComplete;
+	| SSEPlanComplete
+	| SSEDiscussionTurnStart
+	| SSEDiscussionTurnEnd;

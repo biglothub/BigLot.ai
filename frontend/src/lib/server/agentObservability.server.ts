@@ -2,7 +2,7 @@ import { getSupabaseAdminClient } from '$lib/server/supabaseAdmin.server';
 import type { AgentMode } from '$lib/agent/systemPrompts';
 import type { AgentRouteType, PlanStepStatus } from '$lib/types/contentBlock';
 
-type ChatMode = 'normal' | 'agent';
+type ChatMode = 'normal' | 'agent' | 'discussion';
 
 type AgentRunStatus = 'running' | 'complete' | 'error';
 type ToolExecutionStatus = 'pending' | 'success' | 'error' | 'timeout';

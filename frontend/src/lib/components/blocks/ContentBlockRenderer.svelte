@@ -13,6 +13,7 @@
     import HeatmapBlock from "./HeatmapBlock.svelte";
     import TradeSetupBlock from "./TradeSetupBlock.svelte";
     import SourcesBlock from "./SourcesBlock.svelte";
+    import DiscussionBlock from "./DiscussionBlock.svelte";
 
     let { block }: { block: ContentBlock } = $props();
 </script>
@@ -49,4 +50,6 @@
     <TradeSetupBlock type="trade_setup" asset={block.asset} direction={block.direction} thesis={block.thesis} entryZone={block.entryZone} stopLoss={block.stopLoss} targets={block.targets} riskRewardRatio={block.riskRewardRatio} maxRiskPct={block.maxRiskPct} invalidation={block.invalidation} timeframe={block.timeframe} />
 {:else if block.type === "sources"}
     <SourcesBlock sources={block.sources} />
+{:else if block.type === "discussion"}
+    <DiscussionBlock discussion={block} />
 {/if}
