@@ -2,10 +2,17 @@
 import type { ContentBlock } from '$lib/types/contentBlock';
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 
+export type DataSource = {
+	name: string;
+	url?: string;
+	accessedAt: number; // Date.now() timestamp
+};
+
 export type ToolResult = {
 	success: boolean;
 	contentBlocks: ContentBlock[];
 	textSummary: string; // plain text fed back to LLM as tool result
+	sources?: DataSource[];
 };
 
 export type ToolDefinition = {

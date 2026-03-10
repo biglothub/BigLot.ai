@@ -12,7 +12,7 @@ export type EnvValidationResult = {
 };
 
 function getEnv(key: string): string | undefined {
-    return process.env[key];
+    return (env as Record<string, string | undefined>)[key];
 }
 
 export function validateEnvironment(): EnvValidationResult {

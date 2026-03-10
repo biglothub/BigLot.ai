@@ -194,14 +194,32 @@
                                     <button
                                         class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
                                         title="Good response"
+                                        disabled={!message.id}
+                                        onclick={() => {
+                                            void chatState.submitFeedback(i, "up");
+                                        }}
                                     >
-                                        <ThumbsUp size={14} />
+                                        <ThumbsUp
+                                            size={14}
+                                            class={message.feedback === "up"
+                                                ? "text-green-500"
+                                                : ""}
+                                        />
                                     </button>
                                     <button
                                         class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors"
                                         title="Bad response"
+                                        disabled={!message.id}
+                                        onclick={() => {
+                                            void chatState.submitFeedback(i, "down");
+                                        }}
                                     >
-                                        <ThumbsDown size={14} />
+                                        <ThumbsDown
+                                            size={14}
+                                            class={message.feedback === "down"
+                                                ? "text-red-500"
+                                                : ""}
+                                        />
                                     </button>
                                 {/if}
                             </div>

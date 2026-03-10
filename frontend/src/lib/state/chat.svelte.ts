@@ -1,12 +1,18 @@
 import { supabase } from '$lib/supabase';
 import { parseSSEStream } from '$lib/utils/sseParser';
-import type { ContentBlock, ToolCallStatus, PlanBlock } from '$lib/types/contentBlock';
+import type {
+    AgentRouteType,
+    ContentBlock,
+    ToolCallStatus,
+    PlanBlock
+} from '$lib/types/contentBlock';
 
 export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript' | 'gold' | 'macro' | 'portfolio';
 export type ChatMode = 'normal' | 'agent';
 export type ChatChannel = 'web' | 'telegram';
 
 export type Message = {
+    id?: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
     contentBlocks?: ContentBlock[];
@@ -14,6 +20,9 @@ export type Message = {
     image_url?: string;
     mode?: AgentMode;
     channel?: ChatChannel;
+    runId?: string | null;
+    routeType?: AgentRouteType;
+    feedback?: 'up' | 'down' | null;
 };
 
 export type Chat = {
@@ -289,10 +298,12 @@ class ChatState {
             this.currentChatId = chatId;
             this.messages = (data ?? []).map((row: any) => {
                 const msg: Message = {
+                    id: typeof row.id === 'string' ? row.id : undefined,
                     role: row.role,
                     content: row.content ?? '',
                     image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
                     channel: row.channel === 'web' || row.channel === 'telegram' ? row.channel : undefined,
+                    runId: typeof row.run_id === 'string' ? row.run_id : undefined,
                     mode:
                         row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript' || row.mode === 'gold' || row.mode === 'macro' || row.mode === 'portfolio'
                             ? row.mode
@@ -424,7 +435,13 @@ class ChatState {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: this.messages, mode: this.agentMode, chatMode: this.chatMode })
+                body: JSON.stringify({
+                    chatId,
+                    biglotUserId: this.biglotUserId,
+                    messages: this.messages,
+                    mode: this.agentMode,
+                    chatMode: this.chatMode
+                })
             });
 
             if (!response.ok) throw new Error('Failed to fetch');
@@ -450,6 +467,23 @@ class ChatState {
                     const data = JSON.parse(event.data);
 
                     switch (event.event) {
+                        case 'run_start': {
+                            this.messages[msgIdx].runId =
+                                typeof data.runId === 'string' ? data.runId : null;
+                            this.messages[msgIdx].routeType =
+                                data.routeType === 'direct_answer' ||
+                                data.routeType === 'single_tool' ||
+                                data.routeType === 'plan_then_execute'
+                                    ? data.routeType
+                                    : undefined;
+                            break;
+                        }
+                        case 'run_id': {
+                            if (typeof data.runId === 'string') {
+                                this.messages[msgIdx].runId = data.runId;
+                            }
+                            break;
+                        }
                         case 'text_delta': {
                             fullText += data.content || '';
                             this.messages[msgIdx].content = fullText;
@@ -457,6 +491,7 @@ class ChatState {
                         }
                         case 'tool_start': {
                             const toolCall: ToolCallStatus = {
+                                id: data.toolCallId,
                                 name: data.tool,
                                 args: data.args,
                                 status: 'running',
@@ -472,9 +507,14 @@ class ChatState {
                             // Mark tool as complete
                             const toolCalls = this.messages[msgIdx].toolCalls || [];
                             const tc = toolCalls.find(
-                                (t) => t.name === data.tool && t.status === 'running'
+                                (t) => t.id === data.toolCallId
                             );
-                            if (tc) tc.status = 'complete';
+                            if (tc) {
+                                tc.status = data.success ? 'complete' : 'error';
+                                tc.latencyMs = Date.now() - tc.startedAt;
+                                tc.resultSummary =
+                                    typeof data.textSummary === 'string' ? data.textSummary : undefined;
+                            }
                             this.messages[msgIdx].toolCalls = [...toolCalls];
 
                             // Add content blocks
@@ -529,6 +569,16 @@ class ChatState {
                         }
                         case 'done': {
                             // Final content blocks from server
+                            if (typeof data.runId === 'string') {
+                                this.messages[msgIdx].runId = data.runId;
+                            }
+                            if (
+                                data.routeType === 'direct_answer' ||
+                                data.routeType === 'single_tool' ||
+                                data.routeType === 'plan_then_execute'
+                            ) {
+                                this.messages[msgIdx].routeType = data.routeType;
+                            }
                             if (Array.isArray(data.contentBlocks) && data.contentBlocks.length > 0) {
                                 this.messages[msgIdx].contentBlocks = data.contentBlocks;
                             }
@@ -555,12 +605,21 @@ class ChatState {
                 if (finalBlocks && finalBlocks.length > 0) {
                     payload.content_blocks = finalBlocks;
                 }
+                if (this.messages[msgIdx].runId) {
+                    payload.run_id = this.messages[msgIdx].runId;
+                }
 
                 let insertError: { message: string } | null = null;
+                let insertedId: string | undefined;
 
                 for (let i = 0; i < 4; i += 1) {
-                    const { error } = await supabase.from('messages').insert(payload);
+                    const { data, error } = await supabase
+                        .from('messages')
+                        .insert(payload)
+                        .select('id')
+                        .single();
                     if (!error) {
+                        insertedId = typeof data?.id === 'string' ? data.id : undefined;
                         insertError = null;
                         break;
                     }
@@ -578,6 +637,10 @@ class ChatState {
                         delete payload.channel;
                         continue;
                     }
+                    if (/run_id/i.test(error.message)) {
+                        delete payload.run_id;
+                        continue;
+                    }
                     break;
                 }
 
@@ -585,6 +648,9 @@ class ChatState {
                     console.error('Error saving assistant message:', insertError);
                     this.lastDbError = insertError.message ?? 'Failed to save assistant message';
                 } else {
+                    if (insertedId) {
+                        this.messages[msgIdx].id = insertedId;
+                    }
                     this.lastDbError = null;
                 }
             }
@@ -603,6 +669,35 @@ class ChatState {
 
     clearSelectedImage() {
         this.selectedImage = null;
+    }
+
+    async submitFeedback(messageIndex: number, feedback: 'up' | 'down'): Promise<boolean> {
+        const message = this.messages[messageIndex];
+        if (!message || message.role !== 'assistant' || !message.id) return false;
+
+        try {
+            const response = await fetch('/api/chat/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messageId: message.id,
+                    runId: message.runId,
+                    biglotUserId: this.biglotUserId,
+                    feedback
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save feedback');
+            }
+
+            this.messages[messageIndex].feedback = feedback;
+            this.messages = [...this.messages];
+            return true;
+        } catch (error) {
+            console.error('Feedback error:', error);
+            return false;
+        }
     }
 }
 

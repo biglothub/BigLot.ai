@@ -4,8 +4,8 @@ import type {
 	ChatCompletionMessageParam,
 	ChatCompletionChunk
 } from 'openai/resources/chat/completions';
-import type { ContentBlock, PlanBlock, PlanStep, PlanStepStatus } from '$lib/types/contentBlock';
-import { getOpenAIToolSchemas, executeTool, getTool } from './tools/registry';
+import type { ContentBlock, PlanBlock, PlanStep, PlanStepStatus, SourcesBlock } from '$lib/types/contentBlock';
+import { getOpenAIToolSchemas, executeTool, getTool, type ToolResult, type DataSource } from './tools/registry';
 
 // Import tools to register them
 import './tools/marketData.tool';
@@ -18,10 +18,16 @@ import './tools/crossAsset.tool';
 
 export type AgentCallbacks = {
 	onTextDelta: (text: string) => void;
-	onToolStart: (name: string, args: Record<string, unknown>) => void;
-	onToolResult: (name: string, blocks: ContentBlock[]) => void;
+	onToolStart: (toolCallId: string, name: string, args: Record<string, unknown>) => void;
+	onToolResult: (toolCallId: string, name: string, result: ToolResult) => void;
 	onPlanCreate: (plan: PlanBlock) => void;
-	onPlanStepUpdate: (planId: string, stepId: string, status: PlanStepStatus, result?: string) => void;
+	onPlanStepUpdate: (
+		planId: string,
+		stepId: string,
+		status: PlanStepStatus,
+		result?: string,
+		stepMeta?: { title?: string; toolName?: string }
+	) => void;
 	onPlanComplete: (planId: string, status: 'complete' | 'error') => void;
 	onError: (message: string) => void;
 };
@@ -101,13 +107,13 @@ function buildPlanBlock(args: Record<string, unknown>): PlanBlock {
 	const title = typeof args.title === 'string' ? args.title : 'Execution Plan';
 	const rawSteps = Array.isArray(args.steps) ? args.steps : [];
 
-	const steps: PlanStep[] = rawSteps.slice(0, 10).map((s: any, i: number) => ({
+	const steps: PlanStep[] = rawSteps.slice(0, 6).map((s: any, i: number) => ({
 		id: typeof s.id === 'string' ? s.id : `step_${i + 1}`,
 		title: typeof s.title === 'string' ? s.title : `Step ${i + 1}`,
 		description: typeof s.description === 'string' ? s.description : undefined,
 		status: 'pending' as const,
 		toolName: typeof s.toolName === 'string' ? s.toolName : undefined
-	}));
+	})).filter((step) => step.title.trim().length > 0);
 
 	return {
 		type: 'plan',
@@ -120,6 +126,35 @@ function buildPlanBlock(args: Record<string, unknown>): PlanBlock {
 	};
 }
 
+/** Validate and normalize plan — auto-appends a synthesis step if missing */
+function normalizePlan(plan: PlanBlock): string | null {
+	if (plan.steps.length === 0) return 'Plan had no steps';
+	if (plan.steps.length > 6) return 'Plan exceeded the 6 step limit';
+
+	for (const step of plan.steps) {
+		if (step.toolName && step.toolName !== 'reasoning' && !getTool(step.toolName)) {
+			return `Plan referenced unknown tool "${step.toolName}"`;
+		}
+	}
+
+	// Auto-append reasoning step if plan doesn't end with one
+	const lastStep = plan.steps[plan.steps.length - 1];
+	if (lastStep.toolName && lastStep.toolName !== 'reasoning') {
+		if (plan.steps.length >= 6) {
+			return 'Plan exceeded the 6 step limit with required synthesis step';
+		}
+		plan.steps.push({
+			id: `step_${plan.steps.length + 1}`,
+			title: 'Synthesize findings',
+			description: 'Combine all gathered data into a comprehensive analysis',
+			status: 'pending' as const,
+			toolName: 'reasoning'
+		});
+	}
+
+	return null;
+}
+
 /**
  * Execute a single plan step that involves a tool call.
  */
@@ -129,7 +164,7 @@ async function executeToolStep(
 	messages: ChatCompletionMessageParam[],
 	step: PlanStep,
 	callbacks: AgentCallbacks
-): Promise<{ blocks: ContentBlock[]; textSummary: string }> {
+): Promise<{ blocks: ContentBlock[]; textSummary: string; sources?: DataSource[] }> {
 	const toolName = step.toolName!;
 	const tool = getTool(toolName);
 	if (!tool) {
@@ -160,6 +195,7 @@ async function executeToolStep(
 	// If the model called the tool, execute it
 	if (finishReason === 'tool_calls' && toolCalls.length > 0) {
 		const tc = toolCalls[0];
+		const toolCallId = tc.id || `${toolName}_${Date.now()}`;
 		let parsedArgs: Record<string, unknown> = {};
 		try {
 			parsedArgs = JSON.parse(tc.arguments || '{}');
@@ -167,11 +203,11 @@ async function executeToolStep(
 			parsedArgs = {};
 		}
 
-		callbacks.onToolStart(toolName, parsedArgs);
+		callbacks.onToolStart(toolCallId, toolName, parsedArgs);
 		const result = await executeTool(toolName, parsedArgs);
-		callbacks.onToolResult(toolName, result.contentBlocks);
+		callbacks.onToolResult(toolCallId, toolName, result);
 
-		return { blocks: result.contentBlocks, textSummary: result.textSummary };
+		return { blocks: result.contentBlocks, textSummary: result.textSummary, sources: result.sources };
 	}
 
 	// Fallback: model responded with text instead of calling the tool
@@ -210,12 +246,38 @@ async function executeReasoningStep(
 }
 
 /**
+ * Deduplicate collected sources and append a SourcesBlock to content blocks.
+ */
+function appendSourcesBlock(blocks: ContentBlock[], sources: DataSource[]): void {
+	if (sources.length === 0) return;
+
+	const sourceMap = new Map<string, DataSource>();
+	for (const s of sources) {
+		const existing = sourceMap.get(s.name);
+		if (!existing || s.accessedAt < existing.accessedAt) {
+			sourceMap.set(s.name, s);
+		}
+	}
+
+	const sourcesBlock: SourcesBlock = {
+		type: 'sources',
+		sources: Array.from(sourceMap.values()).map((s) => ({
+			name: s.name,
+			url: s.url,
+			accessedAt: s.accessedAt
+		}))
+	};
+	blocks.push(sourcesBlock);
+}
+
+/**
  * Main agent loop with Manus-like planning support.
  */
 export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBlock[]> {
 	const { client, apiModel, callbacks, maxIterations = 5, planningEnabled = false } = config;
 	const messages = [...config.messages];
 	const allContentBlocks: ContentBlock[] = [];
+	const collectedSources: DataSource[] = [];
 	const tools = getOpenAIToolSchemas();
 
 	// Phase 1: Initial LLM call (may produce a plan or direct response)
@@ -242,9 +304,10 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 		}
 
 		const plan = buildPlanBlock(planArgs);
-		if (plan.steps.length === 0) {
+		const planValidationError = normalizePlan(plan);
+		if (planValidationError) {
 			// Invalid plan, fall through to standard mode
-			callbacks.onError('Plan had no steps, falling back to standard mode');
+			callbacks.onError(`${planValidationError}, falling back to standard mode`);
 		} else {
 			plan.status = 'executing';
 			callbacks.onPlanCreate(plan);
@@ -273,7 +336,10 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 
 			// Phase 2: Execute each step
 			for (const step of plan.steps) {
-				callbacks.onPlanStepUpdate(plan.planId, step.id, 'running');
+				callbacks.onPlanStepUpdate(plan.planId, step.id, 'running', undefined, {
+					title: step.title,
+					toolName: step.toolName
+				});
 				step.status = 'running';
 				step.startedAt = Date.now();
 
@@ -304,10 +370,13 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 						step.status = 'complete';
 						step.result = isFinalSynthesis ? 'Analysis complete' : text.slice(0, 100);
 						step.completedAt = Date.now();
-						callbacks.onPlanStepUpdate(plan.planId, step.id, 'complete', step.result);
+						callbacks.onPlanStepUpdate(plan.planId, step.id, 'complete', step.result, {
+							title: step.title,
+							toolName: step.toolName
+						});
 					} else {
 						// Tool step
-						const { blocks, textSummary } = await executeToolStep(
+						const { blocks, textSummary, sources: stepSources } = await executeToolStep(
 							client,
 							apiModel,
 							messages,
@@ -318,6 +387,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 						for (const block of blocks) {
 							allContentBlocks.push(block);
 						}
+						if (stepSources) collectedSources.push(...stepSources);
 
 						// Add tool result to message history for subsequent steps
 						messages.push({
@@ -329,14 +399,20 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 						step.status = 'complete';
 						step.result = textSummary.slice(0, 100);
 						step.completedAt = Date.now();
-						callbacks.onPlanStepUpdate(plan.planId, step.id, 'complete', step.result);
+						callbacks.onPlanStepUpdate(plan.planId, step.id, 'complete', step.result, {
+							title: step.title,
+							toolName: step.toolName
+						});
 					}
 				} catch (err: unknown) {
 					const errMsg = err instanceof Error ? err.message : 'Step failed';
 					step.status = 'error';
 					step.result = errMsg;
 					step.completedAt = Date.now();
-					callbacks.onPlanStepUpdate(plan.planId, step.id, 'error', errMsg);
+					callbacks.onPlanStepUpdate(plan.planId, step.id, 'error', errMsg, {
+						title: step.title,
+						toolName: step.toolName
+					});
 					stepResults.push(`[${step.title}]: ERROR - ${errMsg}`);
 					// Continue to next step
 				}
@@ -348,6 +424,9 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 			plan.status = allErrors ? 'error' : 'complete';
 			plan.updatedAt = Date.now();
 			callbacks.onPlanComplete(plan.planId, allErrors ? 'error' : 'complete');
+
+			// Append deduplicated sources block
+			appendSourcesBlock(allContentBlocks, collectedSources);
 
 			return allContentBlocks;
 		}
@@ -374,6 +453,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 	for (const tc of toolCalls) {
 		if (tc.name === 'create_plan') continue; // Skip if planning wasn't enabled
 
+		const toolCallId = tc.id || `${tc.name}_${Date.now()}`;
 		let parsedArgs: Record<string, unknown> = {};
 		try {
 			parsedArgs = JSON.parse(tc.arguments || '{}');
@@ -381,12 +461,13 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 			parsedArgs = {};
 		}
 
-		callbacks.onToolStart(tc.name, parsedArgs);
+		callbacks.onToolStart(toolCallId, tc.name, parsedArgs);
 		const result = await executeTool(tc.name, parsedArgs);
 		for (const block of result.contentBlocks) {
 			allContentBlocks.push(block);
 		}
-		callbacks.onToolResult(tc.name, result.contentBlocks);
+		if (result.sources) collectedSources.push(...result.sources);
+		callbacks.onToolResult(toolCallId, tc.name, result);
 
 		messages.push({
 			role: 'tool',
@@ -423,6 +504,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 		});
 
 		for (const tc of result.toolCalls) {
+			const toolCallId = tc.id || `${tc.name}_${Date.now()}`;
 			let parsedArgs: Record<string, unknown> = {};
 			try {
 				parsedArgs = JSON.parse(tc.arguments || '{}');
@@ -430,12 +512,13 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 				parsedArgs = {};
 			}
 
-			callbacks.onToolStart(tc.name, parsedArgs);
+			callbacks.onToolStart(toolCallId, tc.name, parsedArgs);
 			const toolResult = await executeTool(tc.name, parsedArgs);
 			for (const block of toolResult.contentBlocks) {
 				allContentBlocks.push(block);
 			}
-			callbacks.onToolResult(tc.name, toolResult.contentBlocks);
+			if (toolResult.sources) collectedSources.push(...toolResult.sources);
+			callbacks.onToolResult(toolCallId, tc.name, toolResult);
 
 			messages.push({
 				role: 'tool',
@@ -444,6 +527,9 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 			} as ChatCompletionMessageParam);
 		}
 	}
+
+	// Append deduplicated sources block
+	appendSourcesBlock(allContentBlocks, collectedSources);
 
 	return allContentBlocks;
 }

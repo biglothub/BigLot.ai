@@ -5,7 +5,14 @@ import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
 import { getClientForModel, isAIModel } from '$lib/server/aiProvider.server';
 import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 import { runAgentLoop } from '$lib/server/agentLoop.server';
-import type { ContentBlock } from '$lib/types/contentBlock';
+import {
+	createAgentRun,
+	logToolExecution,
+	updateAgentRun,
+	upsertAgentStepRun
+} from '$lib/server/agentObservability.server';
+import { classifyChatRoute, shouldEnablePlanning } from '$lib/server/chatRouting.server';
+import type { AgentRouteType, ContentBlock } from '$lib/types/contentBlock';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type IncomingMessage = {
@@ -52,6 +59,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
         return json({ error: '`messages` must be an array' }, { status: 400 });
     }
 
+    const chatId = typeof payload?.chatId === 'string' ? payload.chatId : null;
+    const biglotUserId = typeof payload?.biglotUserId === 'string' ? payload.biglotUserId : null;
+
     const MAX_MESSAGES = 50;
     const MAX_CHARS = 8000;
 
@@ -68,7 +78,15 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
     const mode = normalizeAgentMode(payload?.mode);
     const chatMode = payload?.chatMode === 'agent' ? 'agent' : 'normal';
-    const planningEnabled = chatMode === 'agent';
+    const latestUserMessage = [...safeMessages].reverse().find((m) => m.role === 'user');
+    const lastUserMessage = latestUserMessage?.content ?? '';
+    const routeType: AgentRouteType = classifyChatRoute({
+        chatMode,
+        mode,
+        lastUserMessage,
+        hasImageInput: safeMessages.some((m) => m.role === 'user' && !!m.image_url)
+    });
+    const planningEnabled = shouldEnablePlanning(chatMode, routeType);
     const systemPrompt = getSystemPrompt(mode, planningEnabled);
 
     // Select model based on chatMode — configurable via .env
@@ -122,7 +140,46 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
         async start(controller) {
+            let runId: string | null = null;
+            let planUsed = false;
+            let toolCallCount = 0;
+            let streamedText = '';
+            const toolStarts = new Map<string, { name: string; args: Record<string, unknown>; startedAt: number }>();
+
+            // Fire createAgentRun non-blocking so SSE stream starts immediately
+            const runIdPromise = createAgentRun({
+                chatId,
+                biglotUserId,
+                mode,
+                chatMode,
+                routeType,
+                provider,
+                model: selectedModel,
+                clientIp,
+                messageCount: safeMessages.length,
+                hasImageInput,
+                lastUserMessage
+            }).then((id) => {
+                runId = id;
+                if (id) {
+                    controller.enqueue(encoder.encode(sseEvent('run_id', { runId: id })));
+                }
+                return id;
+            }).catch(() => null);
+
             try {
+                controller.enqueue(
+                    encoder.encode(
+                        sseEvent('run_start', {
+                            runId: null,
+                            routeType,
+                            mode,
+                            chatMode,
+                            model: selectedModel
+                        })
+                    )
+                );
+
                 if (chatMode === 'agent') {
                     // Agent mode: GPT-4o with tool calling via agent loop
                     const allBlocks: ContentBlock[] = [];
@@ -135,21 +192,64 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         planningEnabled,
                         callbacks: {
                             onTextDelta: (text) => {
+                                streamedText += text;
                                 controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
                             },
-                            onToolStart: (tool, args) => {
-                                controller.enqueue(encoder.encode(sseEvent('tool_start', { tool, args })));
+                            onToolStart: (toolCallId, tool, args) => {
+                                toolCallCount += 1;
+                                toolStarts.set(toolCallId, { name: tool, args, startedAt: Date.now() });
+                                controller.enqueue(
+                                    encoder.encode(sseEvent('tool_start', { toolCallId, tool, args }))
+                                );
                             },
-                            onToolResult: (tool, blocks) => {
-                                allBlocks.push(...blocks);
-                                controller.enqueue(encoder.encode(sseEvent('tool_result', { tool, blocks })));
+                            onToolResult: (toolCallId, tool, result) => {
+                                const started = toolStarts.get(toolCallId);
+                                const executionTimeMs = started ? Date.now() - started.startedAt : null;
+                                allBlocks.push(...result.contentBlocks);
+                                controller.enqueue(
+                                    encoder.encode(
+                                        sseEvent('tool_result', {
+                                            toolCallId,
+                                            tool,
+                                            blocks: result.contentBlocks,
+                                            success: result.success,
+                                            textSummary: result.textSummary
+                                        })
+                                    )
+                                );
+
+                                void logToolExecution({
+                                    runId,
+                                    chatId,
+                                    toolCallId,
+                                    toolName: tool,
+                                    toolArgs: started?.args ?? {},
+                                    resultStatus: result.success ? 'success' : 'error',
+                                    resultData: {
+                                        textSummary: result.textSummary,
+                                        blockCount: result.contentBlocks.length,
+                                        blockTypes: result.contentBlocks.map((block) => block.type)
+                                    },
+                                    errorMessage: result.success ? null : result.textSummary,
+                                    executionTimeMs
+                                });
                             },
                             onPlanCreate: (plan) => {
+                                planUsed = true;
                                 allBlocks.push(plan);
                                 controller.enqueue(encoder.encode(sseEvent('plan_create', { plan })));
                             },
-                            onPlanStepUpdate: (planId, stepId, status, result) => {
+                            onPlanStepUpdate: (planId, stepId, status, result, stepMeta) => {
                                 controller.enqueue(encoder.encode(sseEvent('plan_update', { planId, stepId, status, result })));
+                                void upsertAgentStepRun({
+                                    runId,
+                                    planId,
+                                    stepId,
+                                    title: stepMeta?.title,
+                                    toolName: stepMeta?.toolName,
+                                    status,
+                                    result
+                                });
                             },
                             onPlanComplete: (planId, status) => {
                                 controller.enqueue(encoder.encode(sseEvent('plan_complete', { planId, status })));
@@ -166,7 +266,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         }
                     }
 
-                    controller.enqueue(encoder.encode(sseEvent('done', { contentBlocks: allBlocks })));
+                    await runIdPromise;
+                    if (runId) {
+                        await updateAgentRun({
+                            runId,
+                            status: 'complete',
+                            planUsed,
+                            toolCallCount,
+                            textOutputLength: streamedText.length
+                        });
+                    }
+
+                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: allBlocks })));
                 } else {
                     // Normal mode: DeepSeek direct streaming, no tools
                     const stream = await client.chat.completions.create({
@@ -178,14 +289,37 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     for await (const chunk of stream) {
                         const text = chunk.choices[0]?.delta?.content;
                         if (text) {
+                            streamedText += text;
                             controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
                         }
                     }
 
-                    controller.enqueue(encoder.encode(sseEvent('done', { contentBlocks: [] })));
+                    await runIdPromise;
+                    if (runId) {
+                        await updateAgentRun({
+                            runId,
+                            status: 'complete',
+                            planUsed: false,
+                            toolCallCount: 0,
+                            textOutputLength: streamedText.length
+                        });
+                    }
+
+                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: [] })));
                 }
             } catch (e: unknown) {
                 const message = e instanceof Error ? e.message : `Failed to call ${provider}`;
+                await runIdPromise.catch(() => null);
+                if (runId) {
+                    await updateAgentRun({
+                        runId,
+                        status: 'error',
+                        planUsed,
+                        toolCallCount,
+                        textOutputLength: streamedText.length,
+                        errorMessage: message
+                    });
+                }
                 controller.enqueue(encoder.encode(sseEvent('error', { message })));
             } finally {
                 controller.close();
