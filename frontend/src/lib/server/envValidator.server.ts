@@ -19,6 +19,26 @@ function getEnv(key: string): string | undefined {
     return (env as Record<string, string | undefined>)[key];
 }
 
+const VALID_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1', 'claude-sonnet', 'claude-haiku', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+
+function validateModelEnv(
+    key: string,
+    warnings: string[],
+    fallbackLabel: string
+): void {
+    const value = getEnv(key) ?? '';
+    if (!value) return;
+
+    if (value === 'deepseek-chat') {
+        warnings.push(`${key} uses legacy value "deepseek-chat" — prefer "deepseek"`);
+        return;
+    }
+
+    if (!VALID_MODELS.includes(value)) {
+        warnings.push(`${key} "${value}" is not recognized, falling back to ${fallbackLabel}`);
+    }
+}
+
 export function validateEnvironment(): EnvValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -71,17 +91,25 @@ export function validateEnvironment(): EnvValidationResult {
     }
 
     // AI Model validation
-    const aiModel = getEnv('AI_MODEL') ?? '';
-    const validModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1', 'claude-sonnet', 'claude-haiku', 'gemini-2.5-flash', 'gemini-2.5-pro'];
-    if (aiModel && !validModels.includes(aiModel)) {
-        warnings.push(`AI_MODEL "${aiModel}" is not recognized, defaulting to gpt-4o`);
-    }
+    validateModelEnv('AI_MODEL', warnings, 'gpt-4o');
+    validateModelEnv('NORMAL_AI_MODEL', warnings, 'AI_MODEL/gpt-4o');
+    validateModelEnv('AGENT_AI_MODEL', warnings, 'AI_MODEL/gpt-4o');
 
     // Discussion model overrides (optional)
     for (const key of ['DISCUSSION_BULL_MODEL', 'DISCUSSION_BEAR_MODEL', 'DISCUSSION_MODERATOR_MODEL']) {
         const val = getEnv(key) ?? '';
-        if (val && !validModels.includes(val)) {
+        if (val === 'deepseek-chat') {
+            warnings.push(`${key} uses legacy value "deepseek-chat" — prefer "deepseek"`);
+        } else if (val && !VALID_MODELS.includes(val)) {
             warnings.push(`${key} "${val}" is not recognized — will fall back to auto-detection`);
+        }
+    }
+
+    const deepResearchIterations = getEnv('DEEP_RESEARCH_MAX_ITERATIONS') ?? '';
+    if (deepResearchIterations) {
+        const parsed = Number.parseInt(deepResearchIterations, 10);
+        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 20) {
+            warnings.push('DEEP_RESEARCH_MAX_ITERATIONS should be an integer between 1 and 20');
         }
     }
 
@@ -110,6 +138,11 @@ export function validateEnvironment(): EnvValidationResult {
         if (!webhookSecret.trim()) {
             warnings.push('TELEGRAM_WEBHOOK_SECRET is recommended in production');
         }
+    }
+
+    const supabaseServerUrl = getEnv('SUPABASE_URL') ?? '';
+    if (supabaseServerUrl.trim() && !/^https?:\/\//.test(supabaseServerUrl)) {
+        warnings.push('SUPABASE_URL should be a full https URL');
     }
 
     return {

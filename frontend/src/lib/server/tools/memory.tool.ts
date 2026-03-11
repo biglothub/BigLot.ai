@@ -1,15 +1,20 @@
 // Memory Tools - save_memory, recall_memory for persistent user context
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { registerTool, type ToolResult } from './registry';
 import { saveMemory, recallMemory, deleteMemory, type MemoryType } from '../memory.server';
 
 const VALID_TYPES: MemoryType[] = ['portfolio', 'preference', 'watchlist', 'trade_history', 'note'];
+const memoryToolUserStore = new AsyncLocalStorage<string | null>();
 
-// Global variable to hold the current user ID for tool execution
-// Set by the agent loop before running tools
-let currentUserId: string | null = null;
+export async function runWithMemoryToolUserId<T>(
+	userId: string | null,
+	callback: () => Promise<T>
+): Promise<T> {
+	return memoryToolUserStore.run(userId, callback);
+}
 
-export function setMemoryToolUserId(userId: string | null): void {
-	currentUserId = userId;
+function getCurrentUserId(): string | null {
+	return memoryToolUserStore.getStore() ?? null;
 }
 
 registerTool({
@@ -60,6 +65,7 @@ registerTool({
 			};
 		}
 
+		const currentUserId = getCurrentUserId();
 		if (!currentUserId || currentUserId === 'anonymous') {
 			return {
 				success: false,
@@ -122,6 +128,7 @@ registerTool({
 			};
 		}
 
+		const currentUserId = getCurrentUserId();
 		if (!currentUserId || currentUserId === 'anonymous') {
 			return {
 				success: true,
@@ -198,6 +205,7 @@ registerTool({
 		const memoryType = String(args.memory_type || '') as MemoryType;
 		const key = String(args.key || '').trim();
 
+		const currentUserId = getCurrentUserId();
 		if (!currentUserId || currentUserId === 'anonymous') {
 			return {
 				success: false,

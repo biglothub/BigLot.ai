@@ -31,21 +31,13 @@ CREATE TRIGGER trg_user_memory_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_user_memory_updated_at();
 
--- RLS: users can only access their own memory
+-- RLS: direct client access is denied.
+-- This table is intended to be accessed only by trusted server code using the
+-- Supabase service-role key, which bypasses RLS and enforces biglot_user_id
+-- scoping in application logic.
 ALTER TABLE user_memory ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can read own memory"
-    ON user_memory FOR SELECT
-    USING (true);
-
-CREATE POLICY "Users can insert own memory"
-    ON user_memory FOR INSERT
-    WITH CHECK (true);
-
-CREATE POLICY "Users can update own memory"
-    ON user_memory FOR UPDATE
-    USING (true);
-
-CREATE POLICY "Users can delete own memory"
-    ON user_memory FOR DELETE
-    USING (true);
+DROP POLICY IF EXISTS "Users can read own memory" ON user_memory;
+DROP POLICY IF EXISTS "Users can insert own memory" ON user_memory;
+DROP POLICY IF EXISTS "Users can update own memory" ON user_memory;
+DROP POLICY IF EXISTS "Users can delete own memory" ON user_memory;

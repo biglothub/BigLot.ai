@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
-import { getClientForModel, isAIModel } from '$lib/server/aiProvider.server';
+import { getClientForModel, isAIModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
 import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 import { runAgentLoop } from '$lib/server/agentLoop.server';
 import { runDiscussionLoop } from '$lib/server/discussionLoop.server';
@@ -14,22 +14,32 @@ import {
 } from '$lib/server/agentObservability.server';
 import { classifyChatRoute, shouldEnablePlanning } from '$lib/server/chatRouting.server';
 import { getMemoryContext } from '$lib/server/memory.server';
-import { setMemoryToolUserId } from '$lib/server/tools/memory.tool';
+import { runWithMemoryToolUserId } from '$lib/server/tools/memory.tool';
 import type { AgentRouteType, ContentBlock, ResearchReportBlock, ResearchSection } from '$lib/types/contentBlock';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
+type JsonObject = Record<string, unknown>;
+
 type IncomingMessage = {
-    role: 'user' | 'assistant' | 'system';
-    content?: unknown;
-    image_url?: unknown;
+	role: 'user' | 'assistant' | 'system';
+	content?: unknown;
+	image_url?: unknown;
 };
 
 function isRole(value: unknown): value is IncomingMessage['role'] {
-    return value === 'user' || value === 'assistant' || value === 'system';
+	return value === 'user' || value === 'assistant' || value === 'system';
+}
+
+function isRecord(value: unknown): value is JsonObject {
+	return typeof value === 'object' && value !== null;
+}
+
+function isIncomingMessage(value: unknown): value is IncomingMessage {
+	return isRecord(value) && isRole(value.role);
 }
 
 function sseEvent(event: string, data: unknown): string {
-    return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+	return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
 /** Parse streamed synthesis text into structured sections by ## headers */
@@ -78,120 +88,131 @@ function parseResearchSections(text: string): ResearchSection[] {
 }
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-    // Rate limiting
-    const clientIp = getClientAddress() || 'unknown';
-    const rateLimitResult = checkRateLimit(clientIp, RATE_LIMITS.chat);
+	// Rate limiting
+	const clientIp = getClientAddress() || 'unknown';
+	const rateLimitResult = checkRateLimit(clientIp, RATE_LIMITS.chat);
 
-    if (!rateLimitResult.allowed) {
-        return json(
-            { error: 'Too many requests. Please try again later.' },
-            {
-                status: 429,
-                headers: {
-                    'X-RateLimit-Remaining': '0',
-                    'X-RateLimit-Reset': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
-                }
-            }
-        );
-    }
+	if (!rateLimitResult.allowed) {
+		return json(
+			{ error: 'Too many requests. Please try again later.' },
+			{
+				status: 429,
+				headers: {
+					'X-RateLimit-Remaining': '0',
+					'X-RateLimit-Reset': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
+				}
+			}
+		);
+	}
 
-    let payload: any;
-    try {
-        payload = await request.json();
-    } catch {
-        return json({ error: 'Invalid JSON body' }, { status: 400 });
-    }
+	let payload: JsonObject;
+	try {
+		const requestBody = await request.json();
+		if (!isRecord(requestBody)) {
+			return json({ error: 'JSON body must be an object' }, { status: 400 });
+		}
+		payload = requestBody;
+	} catch {
+		return json({ error: 'Invalid JSON body' }, { status: 400 });
+	}
 
-    const messagesRaw = payload?.messages;
-    if (!Array.isArray(messagesRaw)) {
-        return json({ error: '`messages` must be an array' }, { status: 400 });
-    }
+	const messagesRaw = payload.messages;
+	if (!Array.isArray(messagesRaw)) {
+		return json({ error: '`messages` must be an array' }, { status: 400 });
+	}
 
-    const chatId = typeof payload?.chatId === 'string' ? payload.chatId : null;
-    const biglotUserId = typeof payload?.biglotUserId === 'string' ? payload.biglotUserId : null;
+	const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
+	const biglotUserId = typeof payload.biglotUserId === 'string' ? payload.biglotUserId : null;
 
-    const MAX_MESSAGES = 50;
-    const MAX_CHARS = 8000;
+	const MAX_MESSAGES = 50;
+	const MAX_CHARS = 8000;
 
-    const safeMessages = (messagesRaw as IncomingMessage[])
-        .filter((m) => m && typeof m === 'object' && isRole((m as any).role))
-        .map((m) => {
-            const role = (m as any).role as IncomingMessage['role'];
-            const content = typeof (m as any).content === 'string' ? (m as any).content : '';
-            const image_url = typeof (m as any).image_url === 'string' ? (m as any).image_url : undefined;
-            return { role, content: content.slice(0, MAX_CHARS), image_url };
-        })
-        .filter((m) => (m.content && m.content.trim().length > 0) || (m.role === 'user' && m.image_url))
-        .slice(-MAX_MESSAGES);
+	const safeMessages = messagesRaw
+		.filter(isIncomingMessage)
+		.map((message) => ({
+			role: message.role,
+			content: typeof message.content === 'string' ? message.content.slice(0, MAX_CHARS) : '',
+			image_url: typeof message.image_url === 'string' ? message.image_url : undefined
+		}))
+		.filter((message) => message.content.trim().length > 0 || (message.role === 'user' && message.image_url))
+		.slice(-MAX_MESSAGES);
 
-    const mode = normalizeAgentMode(payload?.mode);
-    const chatMode = payload?.chatMode === 'agent' ? 'agent' : payload?.chatMode === 'discussion' ? 'discussion' : 'normal';
-    const latestUserMessage = [...safeMessages].reverse().find((m) => m.role === 'user');
-    const lastUserMessage = latestUserMessage?.content ?? '';
-    const routeType: AgentRouteType = chatMode === 'discussion'
-        ? 'discussion'
-        : classifyChatRoute({
-              chatMode,
-              mode,
-              lastUserMessage,
-              hasImageInput: safeMessages.some((m) => m.role === 'user' && !!m.image_url)
-          });
-    const isDeepResearch = routeType === 'deep_research';
-    const planningEnabled = shouldEnablePlanning(chatMode, routeType);
-    const systemPrompt = getSystemPrompt(mode, planningEnabled, isDeepResearch);
+	const mode = normalizeAgentMode(payload.mode);
+	const chatMode =
+		payload.chatMode === 'agent'
+			? 'agent'
+			: payload.chatMode === 'discussion'
+				? 'discussion'
+				: 'normal';
+	const latestUserMessage = [...safeMessages].reverse().find((message) => message.role === 'user');
+	const lastUserMessage = latestUserMessage?.content ?? '';
+	const hasImageInput = safeMessages.some((message) => message.role === 'user' && !!message.image_url);
+	const routeType: AgentRouteType =
+		chatMode === 'discussion'
+			? 'discussion'
+			: classifyChatRoute({
+					chatMode,
+					mode,
+					lastUserMessage,
+					hasImageInput
+				});
+	const isDeepResearch = routeType === 'deep_research';
+	const planningEnabled = shouldEnablePlanning(chatMode, routeType);
+	const systemPrompt = getSystemPrompt(mode, planningEnabled, isDeepResearch);
 
-    // Select model based on chatMode — configurable via .env
-    const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : 'deepseek';
-    const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : 'gpt-4o';
-    const selectedModel = chatMode === 'agent' || isDeepResearch ? agentModel : chatMode === 'discussion' ? agentModel : normalModel;
+	const sharedModel = resolveDefaultAIModel();
+	const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : sharedModel;
+	const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : sharedModel;
+	const selectedModel =
+		chatMode === 'discussion' || chatMode === 'agent' || isDeepResearch ? agentModel : normalModel;
 
-    if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
-        return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
-            headers: {
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Cache-Control': 'no-cache',
-                'X-BigLot-Mode': mode,
-                'X-BigLot-Model': selectedModel
-            }
-        });
-    }
+	if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
+		return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
+			headers: {
+				'Content-Type': 'text/plain; charset=utf-8',
+				'Cache-Control': 'no-cache',
+				'X-BigLot-Mode': mode,
+				'X-BigLot-Model': selectedModel
+			}
+		});
+	}
 
-    const hasImageInput = safeMessages.some((m) => m.role === 'user' && !!m.image_url);
-    const { client, apiModel, provider, supportsImageInput } = getClientForModel(selectedModel);
-    if (hasImageInput && !supportsImageInput) {
-        return json(
-            {
-                error: `Model '${selectedModel}' does not support image input. Switch AI_MODEL to 'gpt-4o' or 'gpt-4o-mini'.`
-            },
-            { status: 400, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
-        );
-    }
+	const { client, apiModel, provider, supportsImageInput } = getClientForModel(selectedModel);
+	if (hasImageInput && !supportsImageInput) {
+		const configuredKey =
+			chatMode === 'discussion' || chatMode === 'agent' || isDeepResearch
+				? 'AGENT_AI_MODEL'
+				: 'NORMAL_AI_MODEL';
+		return json(
+			{
+				error: `Model '${selectedModel}' does not support image input. Switch ${configuredKey} or AI_MODEL to 'gpt-4o' or 'gpt-4o-mini'.`
+			},
+			{ status: 400, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
+		);
+	}
 
-    // Set user ID for memory tools (before agent loop executes tools)
-    setMemoryToolUserId(biglotUserId);
-
-    // Fetch user memory context for personalization
-    const memoryContext = biglotUserId ? await getMemoryContext(biglotUserId).catch(() => null) : null;
+	// Fetch user memory context for personalization
+	const memoryContext = biglotUserId ? await getMemoryContext(biglotUserId).catch(() => null) : null;
 
     // Build formatted messages for OpenAI
-    const formattedMessages: ChatCompletionMessageParam[] = [
-        {
-            role: 'system',
-            content: memoryContext ? `${systemPrompt}\n\n${memoryContext}` : systemPrompt
-        },
-        ...safeMessages.map((m): ChatCompletionMessageParam => {
-            if (m.role === 'user' && m.image_url) {
-                return {
-                    role: 'user',
-                    content: [
-                        { type: 'text' as const, text: m.content || 'Analyze this image.' },
-                        { type: 'image_url' as const, image_url: { url: m.image_url } }
-                    ]
-                };
-            }
-            return { role: m.role as 'user' | 'assistant' | 'system', content: m.content };
-        })
-    ];
+	const formattedMessages: ChatCompletionMessageParam[] = [
+		{
+			role: 'system',
+			content: memoryContext ? `${systemPrompt}\n\n${memoryContext}` : systemPrompt
+		},
+		...safeMessages.map((message): ChatCompletionMessageParam => {
+			if (message.role === 'user' && message.image_url) {
+				return {
+					role: 'user',
+					content: [
+						{ type: 'text' as const, text: message.content || 'Analyze this image.' },
+						{ type: 'image_url' as const, image_url: { url: message.image_url } }
+					]
+				};
+			}
+			return { role: message.role, content: message.content };
+		})
+	];
 
     // SSE streaming
     const encoder = new TextEncoder();
@@ -252,86 +273,90 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
                     const deepResearchMaxIterations = parseInt(env.DEEP_RESEARCH_MAX_ITERATIONS || '8', 10);
 
-                    const resultBlocks = await runAgentLoop({
-                        client,
-                        apiModel,
-                        messages: formattedMessages,
-                        maxIterations: isDeepResearch ? deepResearchMaxIterations : 5,
-                        maxPlanSteps: isDeepResearch ? 10 : 6,
-                        planningEnabled,
-                        currentMode: mode,
-                        callbacks: {
-                            onTextDelta: (text) => {
-                                streamedText += text;
-                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
-                            },
-                            onToolStart: (toolCallId, tool, args) => {
-                                toolCallCount += 1;
-                                toolStarts.set(toolCallId, { name: tool, args, startedAt: Date.now() });
-                                controller.enqueue(
-                                    encoder.encode(sseEvent('tool_start', { toolCallId, tool, args }))
-                                );
-                            },
-                            onToolResult: (toolCallId, tool, result) => {
-                                const started = toolStarts.get(toolCallId);
-                                const executionTimeMs = started ? Date.now() - started.startedAt : null;
-                                allBlocks.push(...result.contentBlocks);
-                                controller.enqueue(
-                                    encoder.encode(
-                                        sseEvent('tool_result', {
-                                            toolCallId,
-                                            tool,
-                                            blocks: result.contentBlocks,
-                                            success: result.success,
-                                            textSummary: result.textSummary
-                                        })
-                                    )
-                                );
+					const resultBlocks = await runWithMemoryToolUserId(biglotUserId, () =>
+						runAgentLoop({
+							client,
+							apiModel,
+							messages: formattedMessages,
+							maxIterations: isDeepResearch ? deepResearchMaxIterations : 5,
+							maxPlanSteps: isDeepResearch ? 10 : 6,
+							planningEnabled,
+							currentMode: mode,
+							callbacks: {
+								onTextDelta: (text) => {
+									streamedText += text;
+									controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+								},
+								onToolStart: (toolCallId, tool, args) => {
+									toolCallCount += 1;
+									toolStarts.set(toolCallId, { name: tool, args, startedAt: Date.now() });
+									controller.enqueue(
+										encoder.encode(sseEvent('tool_start', { toolCallId, tool, args }))
+									);
+								},
+								onToolResult: (toolCallId, tool, result) => {
+									const started = toolStarts.get(toolCallId);
+									const executionTimeMs = started ? Date.now() - started.startedAt : null;
+									allBlocks.push(...result.contentBlocks);
+									controller.enqueue(
+										encoder.encode(
+											sseEvent('tool_result', {
+												toolCallId,
+												tool,
+												blocks: result.contentBlocks,
+												success: result.success,
+												textSummary: result.textSummary
+											})
+										)
+									);
 
-                                void logToolExecution({
-                                    runId,
-                                    chatId,
-                                    toolCallId,
-                                    toolName: tool,
-                                    toolArgs: started?.args ?? {},
-                                    resultStatus: result.success ? 'success' : 'error',
-                                    resultData: {
-                                        textSummary: result.textSummary,
-                                        blockCount: result.contentBlocks.length,
-                                        blockTypes: result.contentBlocks.map((block) => block.type)
-                                    },
-                                    errorMessage: result.success ? null : result.textSummary,
-                                    executionTimeMs
-                                });
-                            },
-                            onPlanCreate: (plan) => {
-                                planUsed = true;
-                                allBlocks.push(plan);
-                                controller.enqueue(encoder.encode(sseEvent('plan_create', { plan })));
-                            },
-                            onPlanStepUpdate: (planId, stepId, status, result, stepMeta) => {
-                                controller.enqueue(encoder.encode(sseEvent('plan_update', { planId, stepId, status, result })));
-                                void upsertAgentStepRun({
-                                    runId,
-                                    planId,
-                                    stepId,
-                                    title: stepMeta?.title,
-                                    toolName: stepMeta?.toolName,
-                                    status,
-                                    result
-                                });
-                            },
-                            onPlanComplete: (planId, status) => {
-                                controller.enqueue(encoder.encode(sseEvent('plan_complete', { planId, status })));
-                            },
-                            onHandoff: (targetMode, reason) => {
-                                controller.enqueue(encoder.encode(sseEvent('agent_handoff', { targetMode, reason })));
-                            },
-                            onError: (message) => {
-                                controller.enqueue(encoder.encode(sseEvent('error', { message })));
-                            }
-                        }
-                    });
+									void logToolExecution({
+										runId,
+										chatId,
+										toolCallId,
+										toolName: tool,
+										toolArgs: started?.args ?? {},
+										resultStatus: result.success ? 'success' : 'error',
+										resultData: {
+											textSummary: result.textSummary,
+											blockCount: result.contentBlocks.length,
+											blockTypes: result.contentBlocks.map((block) => block.type)
+										},
+										errorMessage: result.success ? null : result.textSummary,
+										executionTimeMs
+									});
+								},
+								onPlanCreate: (plan) => {
+									planUsed = true;
+									allBlocks.push(plan);
+									controller.enqueue(encoder.encode(sseEvent('plan_create', { plan })));
+								},
+								onPlanStepUpdate: (planId, stepId, status, result, stepMeta) => {
+									controller.enqueue(
+										encoder.encode(sseEvent('plan_update', { planId, stepId, status, result }))
+									);
+									void upsertAgentStepRun({
+										runId,
+										planId,
+										stepId,
+										title: stepMeta?.title,
+										toolName: stepMeta?.toolName,
+										status,
+										result
+									});
+								},
+								onPlanComplete: (planId, status) => {
+									controller.enqueue(encoder.encode(sseEvent('plan_complete', { planId, status })));
+								},
+								onHandoff: (targetMode, reason) => {
+									controller.enqueue(encoder.encode(sseEvent('agent_handoff', { targetMode, reason })));
+								},
+								onError: (message) => {
+									controller.enqueue(encoder.encode(sseEvent('error', { message })));
+								}
+							}
+						})
+					);
 
                     if (keepAliveInterval) clearInterval(keepAliveInterval);
 

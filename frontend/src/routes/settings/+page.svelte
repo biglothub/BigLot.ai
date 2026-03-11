@@ -21,12 +21,16 @@
     let isExporting = $state(false);
     let exportFormat = $state<'markdown' | 'json'>('markdown');
 
+    function isStoredAgentMode(value: string | null): value is typeof chatState.agentMode {
+        return value === 'coach' || value === 'recovery' || value === 'analyst' || value === 'pinescript' || value === 'gold' || value === 'macro' || value === 'portfolio';
+    }
+
     onMount(() => {
         // Load current model from environment
         // Note: This is server-configured, but we show current status
         const saved = localStorage.getItem('biglot.agentMode');
-        if (saved) {
-            chatState.setAgentMode(saved as any);
+        if (isStoredAgentMode(saved)) {
+            chatState.setAgentMode(saved);
         }
     });
 
@@ -34,7 +38,7 @@
         const select = event.target as HTMLSelectElement;
         // Note: Model switching requires server restart
         // This is informational display
-        alert('AI Model is configured server-side via AI_MODEL environment variable. Restart the server after changing .env to apply.');
+        alert('Models are configured server-side via NORMAL_AI_MODEL, AGENT_AI_MODEL, and AI_MODEL environment variables. Restart the server after changing .env to apply.');
     }
 
     function toggleTheme() {
@@ -178,8 +182,10 @@
                             {/each}
                         </select>
                         <p class="text-xs text-muted-foreground mt-2">
-                            Model is configured via <code class="bg-secondary px-1 rounded">AI_MODEL</code> environment variable.
-                            Restart server after changing.
+                            <code class="bg-secondary px-1 rounded">NORMAL_AI_MODEL</code> controls normal chat,
+                            <code class="bg-secondary px-1 rounded">AGENT_AI_MODEL</code> controls agent/discussion mode,
+                            and <code class="bg-secondary px-1 rounded">AI_MODEL</code> is the shared fallback for
+                            Telegram and indicator generation. Restart server after changing.
                         </p>
                     </div>
                 </div>

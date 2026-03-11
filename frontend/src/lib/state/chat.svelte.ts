@@ -43,6 +43,111 @@ type LinkTokenResponse = {
     expiresAt: string;
 };
 
+type JsonObject = Record<string, unknown>;
+
+const AGENT_MODES: AgentMode[] = ['coach', 'recovery', 'analyst', 'pinescript', 'gold', 'macro', 'portfolio'];
+const CHAT_MODES: ChatMode[] = ['normal', 'agent', 'discussion'];
+const CHAT_CHANNELS: ChatChannel[] = ['web', 'telegram'];
+const AGENT_ROUTE_TYPES: AgentRouteType[] = ['direct_answer', 'single_tool', 'plan_then_execute', 'discussion', 'deep_research'];
+const CONTENT_BLOCK_TYPES = new Set([
+    'text',
+    'image',
+    'chart',
+    'table',
+    'metric_card',
+    'news_list',
+    'embed',
+    'error',
+    'plan',
+    'gauge',
+    'heatmap',
+    'trade_setup',
+    'sources',
+    'discussion',
+    'research_report'
+] as const);
+const PLAN_STEP_STATUSES = new Set(['pending', 'running', 'complete', 'error', 'skipped'] as const);
+const PLAN_STATUSES = new Set(['planning', 'executing', 'complete', 'error'] as const);
+const DISCUSSION_PANELIST_IDS = new Set(['bull', 'bear', 'moderator'] as const);
+
+function isRecord(value: unknown): value is JsonObject {
+    return typeof value === 'object' && value !== null;
+}
+
+function isMessageRole(value: unknown): value is Message['role'] {
+    return value === 'user' || value === 'assistant' || value === 'system';
+}
+
+function isAgentMode(value: unknown): value is AgentMode {
+    return typeof value === 'string' && AGENT_MODES.includes(value as AgentMode);
+}
+
+function isChatMode(value: unknown): value is ChatMode {
+    return typeof value === 'string' && CHAT_MODES.includes(value as ChatMode);
+}
+
+function isChatChannel(value: unknown): value is ChatChannel {
+    return typeof value === 'string' && CHAT_CHANNELS.includes(value as ChatChannel);
+}
+
+function isAgentRouteType(value: unknown): value is AgentRouteType {
+    return typeof value === 'string' && AGENT_ROUTE_TYPES.includes(value as AgentRouteType);
+}
+
+function isContentBlock(value: unknown): value is ContentBlock {
+    return isRecord(value) && typeof value.type === 'string' && CONTENT_BLOCK_TYPES.has(value.type as ContentBlock['type']);
+}
+
+function isPlanBlock(value: unknown): value is PlanBlock {
+    return (
+        isRecord(value) &&
+        value.type === 'plan' &&
+        typeof value.planId === 'string' &&
+        Array.isArray(value.steps) &&
+        typeof value.title === 'string' &&
+        PLAN_STATUSES.has(value.status as PlanBlock['status'])
+    );
+}
+
+function isDiscussionBlock(value: unknown): value is DiscussionBlock {
+    return (
+        isRecord(value) &&
+        value.type === 'discussion' &&
+        typeof value.discussionId === 'string' &&
+        Array.isArray(value.turns) &&
+        Array.isArray(value.panelists)
+    );
+}
+
+function parseJsonObject(raw: string): JsonObject | null {
+    try {
+        const parsed = JSON.parse(raw);
+        return isRecord(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function parseStoredMessageRow(row: unknown): Message | null {
+    if (!isRecord(row) || !isMessageRole(row.role)) return null;
+
+    const message: Message = {
+        id: typeof row.id === 'string' ? row.id : undefined,
+        role: row.role,
+        content: typeof row.content === 'string' ? row.content : '',
+        image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
+        channel: isChatChannel(row.channel) ? row.channel : undefined,
+        runId: typeof row.run_id === 'string' ? row.run_id : undefined,
+        mode: isAgentMode(row.mode) ? row.mode : undefined
+    };
+
+    if (Array.isArray(row.content_blocks)) {
+        message.contentBlocks = row.content_blocks.filter(isContentBlock);
+    }
+
+    return message;
+}
+
 async function readApiError(response: Response, fallback: string): Promise<string> {
     try {
         const body = await response.clone().json();
@@ -88,12 +193,12 @@ class ChatState {
         if (typeof localStorage === 'undefined') return;
 
         const savedMode = localStorage.getItem(ChatState.AGENT_MODE_STORAGE_KEY);
-        if (savedMode === 'coach' || savedMode === 'recovery' || savedMode === 'analyst' || savedMode === 'pinescript' || savedMode === 'gold' || savedMode === 'macro' || savedMode === 'portfolio') {
+        if (isAgentMode(savedMode)) {
             this.agentMode = savedMode;
         }
 
         const savedChatMode = localStorage.getItem(ChatState.CHAT_MODE_STORAGE_KEY);
-        if (savedChatMode === 'normal' || savedChatMode === 'agent' || savedChatMode === 'discussion') {
+        if (isChatMode(savedChatMode)) {
             this.chatMode = savedChatMode;
         }
 
@@ -283,7 +388,7 @@ class ChatState {
         this.lastDbError = null;
 
         try {
-            let data: any[] | null = null;
+            let data: JsonObject[] | null = null;
             let error: { message: string } | null = null;
 
             ({ data, error } = await supabase
@@ -306,24 +411,9 @@ class ChatState {
             }
 
             this.currentChatId = chatId;
-            this.messages = (data ?? []).map((row: any) => {
-                const msg: Message = {
-                    id: typeof row.id === 'string' ? row.id : undefined,
-                    role: row.role,
-                    content: row.content ?? '',
-                    image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
-                    channel: row.channel === 'web' || row.channel === 'telegram' ? row.channel : undefined,
-                    runId: typeof row.run_id === 'string' ? row.run_id : undefined,
-                    mode:
-                        row.mode === 'coach' || row.mode === 'recovery' || row.mode === 'analyst' || row.mode === 'pinescript' || row.mode === 'gold' || row.mode === 'macro' || row.mode === 'portfolio'
-                            ? row.mode
-                            : undefined
-                };
-                // Restore content blocks from DB if available
-                if (row.content_blocks && Array.isArray(row.content_blocks)) {
-                    msg.contentBlocks = row.content_blocks;
-                }
-                return msg;
+            this.messages = (data ?? []).flatMap((row) => {
+                const message = parseStoredMessageRow(row);
+                return message ? [message] : [];
             });
         } finally {
             this.isLoading = false;
@@ -475,202 +565,224 @@ class ChatState {
 
             // Parse SSE stream
             for await (const event of parseSSEStream(response.body)) {
-                try {
-                    const data = JSON.parse(event.data);
+                const data = parseJsonObject(event.data);
+                if (!data) {
+                    continue;
+                }
 
-                    switch (event.event) {
-                        case 'run_start': {
-                            this.messages[msgIdx].runId =
-                                typeof data.runId === 'string' ? data.runId : null;
-                            this.messages[msgIdx].routeType =
-                                data.routeType === 'direct_answer' ||
-                                data.routeType === 'single_tool' ||
-                                data.routeType === 'plan_then_execute' ||
-                                data.routeType === 'discussion' ||
-                                data.routeType === 'deep_research'
-                                    ? data.routeType
-                                    : undefined;
-                            break;
-                        }
-                        case 'run_id': {
-                            if (typeof data.runId === 'string') {
-                                this.messages[msgIdx].runId = data.runId;
-                            }
-                            break;
-                        }
-                        case 'text_delta': {
-                            const discBlock = allBlocks.find(
-                                (b): b is DiscussionBlock => b.type === 'discussion'
-                            );
-                            if (discBlock && discBlock.status === 'running' && discBlock.turns.length > 0) {
-                                // Route to correct turn by panelistId (supports parallel streaming)
-                                const targetTurn = data.panelistId
-                                    ? [...discBlock.turns].reverse().find(t => t.panelistId === data.panelistId)
-                                    : discBlock.turns[discBlock.turns.length - 1];
-                                if (targetTurn) {
-                                    targetTurn.content += data.content || '';
-                                }
-                                discBlock.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            } else {
-                                fullText += data.content || '';
-                                this.messages[msgIdx].content = fullText;
-                            }
-                            break;
-                        }
-                        case 'tool_start': {
-                            const toolCall: ToolCallStatus = {
-                                id: data.toolCallId,
-                                name: data.tool,
-                                args: data.args,
-                                status: 'running',
-                                startedAt: Date.now()
-                            };
-                            this.messages[msgIdx].toolCalls = [
-                                ...(this.messages[msgIdx].toolCalls || []),
-                                toolCall
-                            ];
-                            break;
-                        }
-                        case 'tool_result': {
-                            // Mark tool as complete
-                            const toolCalls = this.messages[msgIdx].toolCalls || [];
-                            const tc = toolCalls.find(
-                                (t) => t.id === data.toolCallId
-                            );
-                            if (tc) {
-                                tc.status = data.success ? 'complete' : 'error';
-                                tc.latencyMs = Date.now() - tc.startedAt;
-                                tc.resultSummary =
-                                    typeof data.textSummary === 'string' ? data.textSummary : undefined;
-                            }
-                            this.messages[msgIdx].toolCalls = [...toolCalls];
-
-                            // Add content blocks
-                            if (Array.isArray(data.blocks)) {
-                                allBlocks.push(...data.blocks);
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'error': {
-                            // Mark any running tools as error
-                            const runningTools = this.messages[msgIdx].toolCalls || [];
-                            for (const t of runningTools) {
-                                if (t.status === 'running') t.status = 'error';
-                            }
-                            this.messages[msgIdx].toolCalls = [...runningTools];
-                            break;
-                        }
-                        case 'plan_create': {
-                            const plan = data.plan as PlanBlock;
-                            allBlocks.push(plan);
-                            this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            break;
-                        }
-                        case 'plan_update': {
-                            const planBlock = allBlocks.find(
-                                (b): b is PlanBlock => b.type === 'plan' && (b as PlanBlock).planId === data.planId
-                            );
-                            if (planBlock) {
-                                const step = planBlock.steps.find((s: any) => s.id === data.stepId);
-                                if (step) {
-                                    step.status = data.status;
-                                    if (data.result) step.result = data.result;
-                                    if (data.status === 'running') step.startedAt = Date.now();
-                                    if (data.status === 'complete' || data.status === 'error') step.completedAt = Date.now();
-                                }
-                                planBlock.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'plan_complete': {
-                            const completedPlan = allBlocks.find(
-                                (b): b is PlanBlock => b.type === 'plan' && (b as PlanBlock).planId === data.planId
-                            );
-                            if (completedPlan) {
-                                completedPlan.status = data.status;
-                                completedPlan.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'discussion_start': {
-                            const discBlock2 = data.block as DiscussionBlock;
-                            allBlocks.push(discBlock2);
-                            this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            break;
-                        }
-                        case 'discussion_turn_start': {
-                            const disc = allBlocks.find(
-                                (b): b is DiscussionBlock => b.type === 'discussion'
-                            );
-                            if (disc) {
-                                disc.turns.push({
-                                    panelistId: data.panelistId,
-                                    round: data.round,
-                                    content: '',
-                                    model: data.model || '',
-                                    startedAt: Date.now()
-                                });
-                                disc.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'discussion_turn_end': {
-                            const disc2 = allBlocks.find(
-                                (b): b is DiscussionBlock => b.type === 'discussion'
-                            );
-                            if (disc2 && disc2.turns.length > 0) {
-                                const turn = disc2.turns[disc2.turns.length - 1];
-                                turn.completedAt = Date.now();
-                                disc2.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'discussion_round_skipped': {
-                            const discSkip = allBlocks.find(
-                                (b): b is DiscussionBlock => b.type === 'discussion'
-                            );
-                            if (discSkip) {
-                                discSkip.skippedRounds = [...(discSkip.skippedRounds ?? []), data.round];
-                                discSkip.updatedAt = Date.now();
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'research_report': {
-                            if (data.report) {
-                                allBlocks.push(data.report);
-                                this.messages[msgIdx].contentBlocks = [...allBlocks];
-                            }
-                            break;
-                        }
-                        case 'done': {
-                            // Final content blocks from server
-                            if (typeof data.runId === 'string') {
-                                this.messages[msgIdx].runId = data.runId;
-                            }
-                            if (
-                                data.routeType === 'direct_answer' ||
-                                data.routeType === 'single_tool' ||
-                                data.routeType === 'plan_then_execute' ||
-                                data.routeType === 'discussion' ||
-                                data.routeType === 'deep_research'
-                            ) {
-                                this.messages[msgIdx].routeType = data.routeType;
-                            }
-                            if (Array.isArray(data.contentBlocks) && data.contentBlocks.length > 0) {
-                                this.messages[msgIdx].contentBlocks = data.contentBlocks;
-                            }
-                            break;
-                        }
+                switch (event.event) {
+                    case 'run_start': {
+                        this.messages[msgIdx].runId = typeof data.runId === 'string' ? data.runId : null;
+                        this.messages[msgIdx].routeType = isAgentRouteType(data.routeType) ? data.routeType : undefined;
+                        break;
                     }
-                } catch {
-                    // Skip malformed SSE events
+                    case 'run_id': {
+                        if (typeof data.runId === 'string') {
+                            this.messages[msgIdx].runId = data.runId;
+                        }
+                        break;
+                    }
+                    case 'text_delta': {
+                        const chunk = typeof data.content === 'string' ? data.content : '';
+                        if (!chunk) break;
+
+                        const discBlock = allBlocks.find(isDiscussionBlock);
+                        if (discBlock && discBlock.status === 'running' && discBlock.turns.length > 0) {
+                            const panelistId =
+                                typeof data.panelistId === 'string' && DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId'])
+                                    ? data.panelistId
+                                    : null;
+                            const targetTurn = panelistId
+                                ? [...discBlock.turns].reverse().find((turn) => turn.panelistId === panelistId)
+                                : discBlock.turns[discBlock.turns.length - 1];
+                            if (targetTurn) {
+                                targetTurn.content += chunk;
+                            }
+                            discBlock.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        } else {
+                            fullText += chunk;
+                            this.messages[msgIdx].content = fullText;
+                        }
+                        break;
+                    }
+                    case 'tool_start': {
+                        if (typeof data.toolCallId !== 'string' || typeof data.tool !== 'string') {
+                            break;
+                        }
+
+                        const toolCall: ToolCallStatus = {
+                            id: data.toolCallId,
+                            name: data.tool,
+                            args: isRecord(data.args) ? data.args : undefined,
+                            status: 'running',
+                            startedAt: Date.now()
+                        };
+                        this.messages[msgIdx].toolCalls = [
+                            ...(this.messages[msgIdx].toolCalls || []),
+                            toolCall
+                        ];
+                        break;
+                    }
+                    case 'tool_result': {
+                        if (typeof data.toolCallId !== 'string') {
+                            break;
+                        }
+
+                        const toolCalls = this.messages[msgIdx].toolCalls || [];
+                        const tc = toolCalls.find((toolCall) => toolCall.id === data.toolCallId);
+                        if (tc) {
+                            tc.status = data.success === true ? 'complete' : 'error';
+                            tc.latencyMs = Date.now() - tc.startedAt;
+                            tc.resultSummary =
+                                typeof data.textSummary === 'string' ? data.textSummary : undefined;
+                        }
+                        this.messages[msgIdx].toolCalls = [...toolCalls];
+
+                        const blocks = Array.isArray(data.blocks) ? data.blocks.filter(isContentBlock) : [];
+                        if (blocks.length > 0) {
+                            allBlocks.push(...blocks);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'error': {
+                        const runningTools = this.messages[msgIdx].toolCalls || [];
+                        for (const toolCall of runningTools) {
+                            if (toolCall.status === 'running') toolCall.status = 'error';
+                        }
+                        this.messages[msgIdx].toolCalls = [...runningTools];
+                        break;
+                    }
+                    case 'plan_create': {
+                        if (isPlanBlock(data.plan)) {
+                            allBlocks.push(data.plan);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'plan_update': {
+                        if (
+                            typeof data.planId !== 'string' ||
+                            typeof data.stepId !== 'string' ||
+                            !PLAN_STEP_STATUSES.has(data.status as PlanBlock['steps'][number]['status'])
+                        ) {
+                            break;
+                        }
+                        const nextStatus = data.status as PlanBlock['steps'][number]['status'];
+
+                        const planBlock = allBlocks.find(
+                            (block): block is PlanBlock => isPlanBlock(block) && block.planId === data.planId
+                        );
+                        if (planBlock) {
+                            const step = planBlock.steps.find((planStep) => planStep.id === data.stepId);
+                            if (step) {
+                                step.status = nextStatus;
+                                if (typeof data.result === 'string') step.result = data.result;
+                                if (nextStatus === 'running') step.startedAt = Date.now();
+                                if (nextStatus === 'complete' || nextStatus === 'error') {
+                                    step.completedAt = Date.now();
+                                }
+                            }
+                            planBlock.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'plan_complete': {
+                        if (
+                            typeof data.planId !== 'string' ||
+                            (data.status !== 'complete' && data.status !== 'error')
+                        ) {
+                            break;
+                        }
+
+                        const completedPlan = allBlocks.find(
+                            (block): block is PlanBlock => isPlanBlock(block) && block.planId === data.planId
+                        );
+                        if (completedPlan) {
+                            completedPlan.status = data.status;
+                            completedPlan.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_start': {
+                        if (isDiscussionBlock(data.block)) {
+                            allBlocks.push(data.block);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_turn_start': {
+                        if (
+                            typeof data.panelistId !== 'string' ||
+                            !DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId']) ||
+                            typeof data.round !== 'number'
+                        ) {
+                            break;
+                        }
+                        const panelistId = data.panelistId as DiscussionBlock['turns'][number]['panelistId'];
+
+                        const disc = allBlocks.find(isDiscussionBlock);
+                        if (disc) {
+                            disc.turns.push({
+                                panelistId,
+                                round: data.round,
+                                content: '',
+                                model: typeof data.model === 'string' ? data.model : '',
+                                startedAt: Date.now()
+                            });
+                            disc.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_turn_end': {
+                        const disc = allBlocks.find(isDiscussionBlock);
+                        if (disc && disc.turns.length > 0) {
+                            const turn = disc.turns[disc.turns.length - 1];
+                            turn.completedAt = Date.now();
+                            disc.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_round_skipped': {
+                        if (typeof data.round !== 'number') {
+                            break;
+                        }
+
+                        const disc = allBlocks.find(isDiscussionBlock);
+                        if (disc) {
+                            disc.skippedRounds = [...(disc.skippedRounds ?? []), data.round];
+                            disc.updatedAt = Date.now();
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'research_report': {
+                        if (isContentBlock(data.report) && data.report.type === 'research_report') {
+                            allBlocks.push(data.report);
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'done': {
+                        if (typeof data.runId === 'string') {
+                            this.messages[msgIdx].runId = data.runId;
+                        }
+                        if (isAgentRouteType(data.routeType)) {
+                            this.messages[msgIdx].routeType = data.routeType;
+                        }
+                        const blocks = Array.isArray(data.contentBlocks)
+                            ? data.contentBlocks.filter(isContentBlock)
+                            : [];
+                        if (blocks.length > 0) {
+                            this.messages[msgIdx].contentBlocks = blocks;
+                        }
+                        break;
+                    }
                 }
             }
 

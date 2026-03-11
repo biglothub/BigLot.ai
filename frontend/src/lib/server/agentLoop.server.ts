@@ -50,6 +50,19 @@ export type AgentLoopConfig = {
 
 type ParsedToolCall = { id: string; name: string; arguments: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function parseJsonObject(input: string): Record<string, unknown> {
+	try {
+		const parsed = JSON.parse(input || '{}');
+		return isRecord(parsed) ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
 /**
  * Stream one LLM call and collect text + tool calls.
  */
@@ -114,13 +127,19 @@ function buildPlanBlock(args: Record<string, unknown>, maxSteps = 6): PlanBlock 
 	const title = typeof args.title === 'string' ? args.title : 'Execution Plan';
 	const rawSteps = Array.isArray(args.steps) ? args.steps : [];
 
-	const steps: PlanStep[] = rawSteps.slice(0, maxSteps).map((s: any, i: number) => ({
-		id: typeof s.id === 'string' ? s.id : `step_${i + 1}`,
-		title: typeof s.title === 'string' ? s.title : `Step ${i + 1}`,
-		description: typeof s.description === 'string' ? s.description : undefined,
-		status: 'pending' as const,
-		toolName: typeof s.toolName === 'string' ? s.toolName : undefined
-	})).filter((step) => step.title.trim().length > 0);
+	const steps: PlanStep[] = rawSteps
+		.slice(0, maxSteps)
+		.map((stepValue, i) => {
+			const step = isRecord(stepValue) ? stepValue : {};
+			return {
+				id: typeof step.id === 'string' ? step.id : `step_${i + 1}`,
+				title: typeof step.title === 'string' ? step.title : `Step ${i + 1}`,
+				description: typeof step.description === 'string' ? step.description : undefined,
+				status: 'pending' as const,
+				toolName: typeof step.toolName === 'string' ? step.toolName : undefined
+			};
+		})
+		.filter((step) => step.title.trim().length > 0);
 
 	return {
 		type: 'plan',
@@ -203,12 +222,7 @@ async function executeToolStep(
 	if (finishReason === 'tool_calls' && toolCalls.length > 0) {
 		const tc = toolCalls[0];
 		const toolCallId = tc.id || `${toolName}_${Date.now()}`;
-		let parsedArgs: Record<string, unknown> = {};
-		try {
-			parsedArgs = JSON.parse(tc.arguments || '{}');
-		} catch {
-			parsedArgs = {};
-		}
+		const parsedArgs = parseJsonObject(tc.arguments);
 
 		callbacks.onToolStart(toolCallId, toolName, parsedArgs);
 		const result = await executeTool(toolName, parsedArgs);
@@ -288,12 +302,7 @@ function detectHandoff(
 	const handoffCall = toolCalls.find((tc) => tc.name === 'handoff_to_agent');
 	if (!handoffCall) return null;
 
-	let args: Record<string, unknown> = {};
-	try {
-		args = JSON.parse(handoffCall.arguments || '{}');
-	} catch {
-		args = {};
-	}
+	const args = parseJsonObject(handoffCall.arguments);
 
 	const targetMode = normalizeAgentMode(args.target_mode);
 	const reason = typeof args.reason === 'string' ? args.reason : 'Switching specialist';
@@ -382,12 +391,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 
 	if (planCall) {
 		// ===== PLAN MODE: Two-phase execution =====
-		let planArgs: Record<string, unknown> = {};
-		try {
-			planArgs = JSON.parse(planCall.arguments || '{}');
-		} catch {
-			planArgs = {};
-		}
+		const planArgs = parseJsonObject(planCall.arguments);
 
 		const plan = buildPlanBlock(planArgs, maxPlanSteps);
 		const planValidationError = normalizePlan(plan, maxPlanSteps);
@@ -540,12 +544,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 		if (tc.name === 'create_plan' || tc.name === 'handoff_to_agent') continue; // Skip pseudo-tools
 
 		const toolCallId = tc.id || `${tc.name}_${Date.now()}`;
-		let parsedArgs: Record<string, unknown> = {};
-		try {
-			parsedArgs = JSON.parse(tc.arguments || '{}');
-		} catch {
-			parsedArgs = {};
-		}
+		const parsedArgs = parseJsonObject(tc.arguments);
 
 		callbacks.onToolStart(toolCallId, tc.name, parsedArgs);
 		const result = await executeTool(tc.name, parsedArgs);
@@ -591,12 +590,7 @@ export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBloc
 
 		for (const tc of result.toolCalls) {
 			const toolCallId = tc.id || `${tc.name}_${Date.now()}`;
-			let parsedArgs: Record<string, unknown> = {};
-			try {
-				parsedArgs = JSON.parse(tc.arguments || '{}');
-			} catch {
-				parsedArgs = {};
-			}
+			const parsedArgs = parseJsonObject(tc.arguments);
 
 			callbacks.onToolStart(toolCallId, tc.name, parsedArgs);
 			const toolResult = await executeTool(tc.name, parsedArgs);

@@ -17,16 +17,21 @@ if (!allowedModels.includes(nextModel)) {
 const envPath = resolve(process.cwd(), '.env');
 const envExists = existsSync(envPath);
 const current = envExists ? readFileSync(envPath, 'utf8') : '';
+const managedKeys = ['AI_MODEL', 'NORMAL_AI_MODEL', 'AGENT_AI_MODEL'];
 
 let next = current;
-if (/^\s*AI_MODEL\s*=.*$/m.test(next)) {
-    next = next.replace(/^\s*AI_MODEL\s*=.*$/m, `AI_MODEL=${nextModel}`);
-} else {
-    const suffix = next.trimEnd().length > 0 ? '\n' : '';
-    next = `${next.trimEnd()}${suffix}AI_MODEL=${nextModel}\n`;
+
+for (const key of managedKeys) {
+    if (new RegExp(`^\\s*${key}\\s*=.*$`, 'm').test(next)) {
+        next = next.replace(new RegExp(`^\\s*${key}\\s*=.*$`, 'm'), `${key}=${nextModel}`);
+    } else {
+        const suffix = next.trimEnd().length > 0 ? '\n' : '';
+        next = `${next.trimEnd()}${suffix}${key}=${nextModel}\n`;
+    }
 }
 
 writeFileSync(envPath, next.endsWith('\n') ? next : `${next}\n`, 'utf8');
 
-console.log(`AI_MODEL switched to '${nextModel}' in ${envPath}`);
+console.log(`Updated ${managedKeys.join(', ')} to '${nextModel}' in ${envPath}`);
+console.log('Adjust NORMAL_AI_MODEL or AGENT_AI_MODEL manually afterwards if you want different chat/agent models.');
 console.log('Restart dev server to apply changes.');
