@@ -16,6 +16,7 @@ export const load: PageServerLoad = async () => {
 	const sharedFallback = resolveDefaultAIModel();
 	const normalModel = resolveConfiguredModel(env.NORMAL_AI_MODEL, sharedFallback);
 	const agentModel = resolveConfiguredModel(env.AGENT_AI_MODEL, sharedFallback);
+	const researchModel = resolveConfiguredModel(env.RESEARCH_AI_MODEL, sharedFallback);
 	const discussionPanelists = resolveDiscussionModels();
 
 	return {
@@ -34,6 +35,11 @@ export const load: PageServerLoad = async () => {
 				model: agentModel,
 				provider: getModelConfig(agentModel).provider,
 				envKeys: ['AGENT_AI_MODEL', 'AI_MODEL']
+			},
+			research: {
+				model: researchModel,
+				provider: getModelConfig(researchModel).provider,
+				envKeys: ['RESEARCH_AI_MODEL', 'AI_MODEL']
 			},
 			discussion: {
 				envKeys: [

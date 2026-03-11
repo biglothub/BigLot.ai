@@ -16,7 +16,7 @@
     let isSaving = $state(false);
     let saveSuccess = $state(false);
     let showKeyboardShortcuts = $state(false);
-    let activeModelSection = $state<'normal' | 'agent' | 'discussion' | 'fallback'>('discussion');
+    let activeModelSection = $state<'normal' | 'agent' | 'research' | 'discussion' | 'fallback'>('discussion');
     
     // Theme
     let theme = $state<'dark' | 'light'>('dark');
@@ -38,7 +38,7 @@
         }
     });
 
-    type ModelSectionId = 'normal' | 'agent' | 'discussion' | 'fallback';
+    type ModelSectionId = 'normal' | 'agent' | 'research' | 'discussion' | 'fallback';
     type ModelOptionMeta = {
         id: AIModel;
         label: string;
@@ -86,9 +86,15 @@
         },
         agent: {
             title: 'Agent',
-            description: 'Tool-using mode for planning, research, and structured execution.',
+            description: 'Tool-using mode for planning and structured execution.',
             icon: Sparkles,
             eyebrow: 'Higher capability, more orchestration'
+        },
+        research: {
+            title: 'Research',
+            description: 'Deep research mode for multi-step synthesis and report generation.',
+            icon: Sparkles,
+            eyebrow: 'Longer runs, deeper retrieval'
         },
         discussion: {
             title: 'Discussion',
@@ -111,7 +117,7 @@
     };
 
     function handleModelSelectionAttempt() {
-        alert('Models are configured server-side via AI_MODEL, NORMAL_AI_MODEL, AGENT_AI_MODEL, and DISCUSSION_* environment variables. Restart the server after changing .env to apply.');
+        alert('Models are configured server-side via AI_MODEL, NORMAL_AI_MODEL, AGENT_AI_MODEL, RESEARCH_AI_MODEL, and DISCUSSION_* environment variables. Restart the server after changing .env to apply.');
     }
 
     function formatModelLabel(model: AIModel): string {
@@ -138,6 +144,7 @@
     const CurrentSectionIcon = $derived(currentSection.icon);
     const normalRuntime = $derived(data.modelRuntime.normal);
     const agentRuntime = $derived(data.modelRuntime.agent);
+    const researchRuntime = $derived(data.modelRuntime.research);
     const sharedFallbackRuntime = $derived(data.modelRuntime.sharedFallback);
     const discussionCards = $derived(
         data.modelRuntime.discussion.panelists.map((panelist) => ({
@@ -370,7 +377,7 @@
                                     </div>
                                 </div>
                             {:else}
-                                {@const runtime = activeModelSection === 'normal' ? normalRuntime : activeModelSection === 'agent' ? agentRuntime : sharedFallbackRuntime}
+                                {@const runtime = activeModelSection === 'normal' ? normalRuntime : activeModelSection === 'agent' ? agentRuntime : activeModelSection === 'research' ? researchRuntime : sharedFallbackRuntime}
                                 <div class="mt-5 rounded-2xl border border-primary/20 bg-primary/7 p-4">
                                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                         <div>

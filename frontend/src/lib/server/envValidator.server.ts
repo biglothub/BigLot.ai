@@ -114,6 +114,7 @@ export function validateEnvironment(): EnvValidationResult {
     validateModelEnv('AI_MODEL', warnings, 'gpt-4o');
     validateModelEnv('NORMAL_AI_MODEL', warnings, 'AI_MODEL/gpt-4o');
     validateModelEnv('AGENT_AI_MODEL', warnings, 'AI_MODEL/gpt-4o');
+    validateModelEnv('RESEARCH_AI_MODEL', warnings, 'AI_MODEL/gpt-4o');
 
     // Discussion model overrides (optional)
     for (const key of ['DISCUSSION_BULL_MODEL', 'DISCUSSION_BEAR_MODEL', 'DISCUSSION_MODERATOR_MODEL']) {

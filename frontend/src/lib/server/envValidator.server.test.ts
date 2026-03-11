@@ -157,6 +157,13 @@ describe('validateEnvironment', () => {
 		expect(modelWarnings).toHaveLength(0);
 	});
 
+	it('warns for unrecognized RESEARCH_AI_MODEL', () => {
+		setMinimalValid();
+		setEnv({ RESEARCH_AI_MODEL: 'gpt-99' });
+		const result = validateEnvironment();
+		expect(result.warnings).toContainEqual(expect.stringContaining('RESEARCH_AI_MODEL'));
+	});
+
 	// --- Discussion model overrides ---
 
 	it('warns for invalid discussion model', () => {

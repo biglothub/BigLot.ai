@@ -19,7 +19,7 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 - **Styling**: [TailwindCSS v4](https://tailwindcss.com/)
 - **Icons**: [Lucide Svelte](https://lucide.dev/guide/packages/lucide-svelte)
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
-- **AI Model**: OpenAI GPT + DeepSeek Chat/R1 support with per-surface overrides for normal chat, agent chat, Telegram, and indicator generation
+- **AI Model**: MiniMax, DeepSeek, OpenAI, Anthropic, and Gemini support with per-surface overrides for normal chat, agent chat, research, discussion, Telegram, and indicator generation
 
 ## Getting Started 🚀
 
@@ -27,8 +27,9 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 
 - Node.js (v18+)
 - Supabase Account
-- OpenAI API Key (for OpenAI models)
-- DeepSeek API Key (optional, required when any configured model uses `deepseek` or `deepseek-r1`)
+- DeepSeek API Key (required for the default shared and research configuration)
+- MiniMax API Key (required for the default normal-chat configuration)
+- OpenAI API Key (required for the default agent and discussion configuration)
 - Telegram Bot Token + Username (optional, required for Telegram Phase 1)
 
 ### Installation
@@ -49,9 +50,13 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
    ```env
    OPENAI_API_KEY=your_openai_key
    DEEPSEEK_API_KEY=your_deepseek_key
-   AI_MODEL=gpt-4o
-   NORMAL_AI_MODEL=deepseek
+   AI_MODEL=deepseek
+   NORMAL_AI_MODEL=minimax-m2.5
    AGENT_AI_MODEL=gpt-4o
+   RESEARCH_AI_MODEL=deepseek
+   DISCUSSION_BULL_MODEL=gpt-4o
+   DISCUSSION_BEAR_MODEL=deepseek
+   DISCUSSION_MODERATOR_MODEL=gpt-4o
    PUBLIC_SUPABASE_URL=your_supabase_url
    PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
    SUPABASE_URL=your_supabase_url
@@ -67,18 +72,20 @@ BigLot.ai is a modern, trader-focused AI chat application designed to analyze ma
 
    Model precedence:
    - `NORMAL_AI_MODEL`: normal web chat override
-   - `AGENT_AI_MODEL`: agent/discussion/deep-research override
-   - `AI_MODEL`: shared fallback for indicator generation, Telegram, and chat when the overrides above are unset
+   - `AGENT_AI_MODEL`: agent override
+   - `RESEARCH_AI_MODEL`: research override
+   - `DISCUSSION_BULL_MODEL`, `DISCUSSION_BEAR_MODEL`, `DISCUSSION_MODERATOR_MODEL`: discussion-only panelist overrides
+   - `AI_MODEL`: shared fallback plus the default for indicator generation, Telegram, and any chat mode without a valid mode-specific override
 
-   Supported values for `AI_MODEL`, `NORMAL_AI_MODEL`, and `AGENT_AI_MODEL`:
-   `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `deepseek`, `deepseek-r1`, `claude-sonnet`, `claude-haiku`, `gemini-2.5-flash`, `gemini-2.5-pro`
+   Supported values for `AI_MODEL`, `NORMAL_AI_MODEL`, `AGENT_AI_MODEL`, and `RESEARCH_AI_MODEL`:
+   `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `deepseek`, `deepseek-r1`, `claude-sonnet`, `claude-haiku`, `gemini-2.5-flash`, `gemini-2.5-pro`, `minimax-text-01`, `minimax-m1`, `minimax-m2.5`, `minimax-m2.5-highspeed`
 
 4. (Optional) Switch model from backend config:
    ```bash
    cd frontend
    npm run switch -- deepseek
    ```
-   This updates `AI_MODEL`, `NORMAL_AI_MODEL`, and `AGENT_AI_MODEL` together. Then restart the dev server.
+   This is a single-model convenience command: it updates `AI_MODEL`, `NORMAL_AI_MODEL`, `AGENT_AI_MODEL`, and `RESEARCH_AI_MODEL` together. For mixed-provider setups, edit `.env` directly. Then restart the dev server.
 
 5. Run the development server:
    ```bash

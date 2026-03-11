@@ -31,7 +31,7 @@ if (!allowedModels.includes(nextModel)) {
 const envPath = resolve(process.cwd(), '.env');
 const envExists = existsSync(envPath);
 const current = envExists ? readFileSync(envPath, 'utf8') : '';
-const managedKeys = ['AI_MODEL', 'NORMAL_AI_MODEL', 'AGENT_AI_MODEL'];
+const managedKeys = ['AI_MODEL', 'NORMAL_AI_MODEL', 'AGENT_AI_MODEL', 'RESEARCH_AI_MODEL'];
 
 let next = current;
 
@@ -47,5 +47,5 @@ for (const key of managedKeys) {
 writeFileSync(envPath, next.endsWith('\n') ? next : `${next}\n`, 'utf8');
 
 console.log(`Updated ${managedKeys.join(', ')} to '${nextModel}' in ${envPath}`);
-console.log('Adjust NORMAL_AI_MODEL or AGENT_AI_MODEL manually afterwards if you want different chat/agent models.');
+console.log('Adjust NORMAL_AI_MODEL, AGENT_AI_MODEL, or RESEARCH_AI_MODEL manually afterwards if you want different models per surface.');
 console.log('Restart dev server to apply changes.');

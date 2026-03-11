@@ -108,11 +108,7 @@ export function isAIModel(value: unknown): value is AIModel {
 }
 
 export function resolveDefaultAIModel(): AIModel {
-    const configured = [
-        env.AI_MODEL?.trim(),
-        env.AGENT_AI_MODEL?.trim(),
-        env.NORMAL_AI_MODEL?.trim()
-    ].find((value): value is string => typeof value === 'string' && value.length > 0);
+    const configured = env.AI_MODEL?.trim();
 
     if (configured === 'deepseek-chat') return 'deepseek';
     if (configured && isAIModel(configured)) return configured;

@@ -18,12 +18,15 @@ export function resolveChatModelRuntime(
 	const sharedModel = resolveDefaultAIModel();
 	const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : sharedModel;
 	const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : sharedModel;
+	const researchModel = isAIModel(env.RESEARCH_AI_MODEL) ? env.RESEARCH_AI_MODEL : sharedModel;
 
 	const selectedModel =
 		customBotDefaultModel && isAIModel(customBotDefaultModel)
 			? customBotDefaultModel
 			: chatMode === 'agent'
 				? agentModel
+				: chatMode === 'research'
+					? researchModel
 				: normalModel;
 
 	if (chatMode === 'discussion') {

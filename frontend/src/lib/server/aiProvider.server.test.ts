@@ -2,11 +2,32 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from '$env/dynamic/private';
 import { isAIModel, resolveDefaultAIModel, getClientForModel, getClientWithFallback, getModelConfig } from './aiProvider.server';
 
+const ENV_KEYS = [
+	'AI_MODEL',
+	'NORMAL_AI_MODEL',
+	'AGENT_AI_MODEL',
+	'OPENAI_API_KEY',
+	'DEEPSEEK_API_KEY',
+	'ANTHROPIC_API_KEY',
+	'GOOGLE_AI_API_KEY',
+	'MINIMAX_API_KEY'
+] as const;
+
 function setEnv(vars: Record<string, string>) {
 	for (const [key, value] of Object.entries(vars)) {
 		(env as Record<string, string>)[key] = value;
 	}
 }
+
+function resetEnv() {
+	for (const key of ENV_KEYS) {
+		delete (env as Record<string, string | undefined>)[key];
+	}
+}
+
+beforeEach(() => {
+	resetEnv();
+});
 
 describe('isAIModel', () => {
 	it.each([
@@ -51,6 +72,15 @@ describe('resolveDefaultAIModel', () => {
 
 	it('trims whitespace from AI_MODEL', () => {
 		setEnv({ AI_MODEL: '  gpt-4o  ' });
+		expect(resolveDefaultAIModel()).toBe('gpt-4o');
+	});
+
+	it('does not use mode-specific models as the shared fallback', () => {
+		setEnv({
+			NORMAL_AI_MODEL: 'minimax-m2.5',
+			AGENT_AI_MODEL: 'deepseek'
+		});
+
 		expect(resolveDefaultAIModel()).toBe('gpt-4o');
 	});
 });

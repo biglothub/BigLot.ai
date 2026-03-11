@@ -219,7 +219,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	}
 
 	if (clientBundle && hasImageInput && !clientBundle.supportsImageInput) {
-		const configuredKey = chatMode === 'agent' ? 'AGENT_AI_MODEL' : 'NORMAL_AI_MODEL';
+		const configuredKey =
+			chatMode === 'normal'
+				? 'NORMAL_AI_MODEL'
+				: chatMode === 'research'
+					? 'RESEARCH_AI_MODEL'
+					: 'AGENT_AI_MODEL';
 		return json(
 			{
 				error: `Model '${selectedModel}' does not support image input. Switch ${configuredKey} or AI_MODEL to 'gpt-4o' or 'gpt-4o-mini'.`
