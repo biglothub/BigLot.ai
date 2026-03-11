@@ -161,6 +161,7 @@ export type DiscussionPanelist = {
 };
 
 export type DiscussionTurn = {
+	turnId: string;
 	panelistId: DiscussionPanelistId;
 	round: number; // 0=intro, 1-2=debate, 99=synthesis
 	content: string;
@@ -319,14 +320,25 @@ export type SSEPlanComplete = {
 export type SSEDiscussionTurnStart = {
 	event: 'discussion_turn_start';
 	discussionId: string;
+	turnId: string;
 	panelistId: DiscussionPanelistId;
 	round: number;
 	model: string;
 };
 
+export type SSEDiscussionTextDelta = {
+	event: 'discussion_text_delta';
+	discussionId: string;
+	turnId: string;
+	panelistId: DiscussionPanelistId;
+	round: number;
+	content: string;
+};
+
 export type SSEDiscussionTurnEnd = {
 	event: 'discussion_turn_end';
 	discussionId: string;
+	turnId: string;
 	panelistId: DiscussionPanelistId;
 	round: number;
 };
@@ -354,6 +366,7 @@ export type SSEEvent =
 	| SSEPlanUpdate
 	| SSEPlanComplete
 	| SSEDiscussionTurnStart
+	| SSEDiscussionTextDelta
 	| SSEDiscussionTurnEnd
 	| SSEDiscussionRoundSkipped
 	| SSEResearchReport;

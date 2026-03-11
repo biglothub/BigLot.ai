@@ -1,5 +1,6 @@
 import { supabase } from '$lib/supabase';
 import { parseSSEStream } from '$lib/utils/sseParser';
+import { applyDiscussionStreamEvent } from './discussionStream';
 import type {
     AgentRouteType,
     ContentBlock,
@@ -665,7 +666,7 @@ class ChatState {
             const msgIdx = this.messages.length - 1;
 
             let fullText = '';
-            const allBlocks: ContentBlock[] = [];
+            let allBlocks: ContentBlock[] = [];
 
             // Parse SSE stream
             for await (const event of parseSSEStream(response.body)) {
@@ -689,25 +690,8 @@ class ChatState {
                     case 'text_delta': {
                         const chunk = typeof data.content === 'string' ? data.content : '';
                         if (!chunk) break;
-
-                        const discBlock = allBlocks.find(isDiscussionBlock);
-                        if (discBlock && discBlock.status === 'running' && discBlock.turns.length > 0) {
-                            const panelistId =
-                                typeof data.panelistId === 'string' && DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId'])
-                                    ? data.panelistId
-                                    : null;
-                            const targetTurn = panelistId
-                                ? [...discBlock.turns].reverse().find((turn) => turn.panelistId === panelistId)
-                                : discBlock.turns[discBlock.turns.length - 1];
-                            if (targetTurn) {
-                                targetTurn.content += chunk;
-                            }
-                            discBlock.updatedAt = Date.now();
-                            this.messages[msgIdx].contentBlocks = [...allBlocks];
-                        } else {
-                            fullText += chunk;
-                            this.messages[msgIdx].content = fullText;
-                        }
+                        fullText += chunk;
+                        this.messages[msgIdx].content = fullText;
                         break;
                     }
                     case 'tool_start': {
@@ -820,34 +804,75 @@ class ChatState {
                     }
                     case 'discussion_turn_start': {
                         if (
+                            typeof data.discussionId !== 'string' ||
+                            typeof data.turnId !== 'string' ||
+                            typeof data.panelistId !== 'string' ||
+                            !DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId']) ||
+                            typeof data.round !== 'number' ||
+                            typeof data.model !== 'string'
+                        ) {
+                            break;
+                        }
+                        const nextBlocks = applyDiscussionStreamEvent(allBlocks, {
+                            event: 'discussion_turn_start',
+                            discussionId: data.discussionId,
+                            turnId: data.turnId,
+                            panelistId: data.panelistId as DiscussionBlock['turns'][number]['panelistId'],
+                            round: data.round,
+                            model: data.model
+                        }, Date.now());
+                        if (nextBlocks !== allBlocks) {
+                            allBlocks = nextBlocks;
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_text_delta': {
+                        if (
+                            typeof data.discussionId !== 'string' ||
+                            typeof data.turnId !== 'string' ||
+                            typeof data.panelistId !== 'string' ||
+                            !DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId']) ||
+                            typeof data.round !== 'number' ||
+                            typeof data.content !== 'string'
+                        ) {
+                            break;
+                        }
+
+                        const nextBlocks = applyDiscussionStreamEvent(allBlocks, {
+                            event: 'discussion_text_delta',
+                            discussionId: data.discussionId,
+                            turnId: data.turnId,
+                            panelistId: data.panelistId as DiscussionBlock['turns'][number]['panelistId'],
+                            round: data.round,
+                            content: data.content
+                        }, Date.now());
+                        if (nextBlocks !== allBlocks) {
+                            allBlocks = nextBlocks;
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        break;
+                    }
+                    case 'discussion_turn_end': {
+                        if (
+                            typeof data.discussionId !== 'string' ||
+                            typeof data.turnId !== 'string' ||
                             typeof data.panelistId !== 'string' ||
                             !DISCUSSION_PANELIST_IDS.has(data.panelistId as DiscussionBlock['turns'][number]['panelistId']) ||
                             typeof data.round !== 'number'
                         ) {
                             break;
                         }
-                        const panelistId = data.panelistId as DiscussionBlock['turns'][number]['panelistId'];
 
-                        const disc = allBlocks.find(isDiscussionBlock);
-                        if (disc) {
-                            disc.turns.push({
-                                panelistId,
-                                round: data.round,
-                                content: '',
-                                model: typeof data.model === 'string' ? data.model : '',
-                                startedAt: Date.now()
-                            });
-                            disc.updatedAt = Date.now();
-                            this.messages[msgIdx].contentBlocks = [...allBlocks];
-                        }
-                        break;
-                    }
-                    case 'discussion_turn_end': {
-                        const disc = allBlocks.find(isDiscussionBlock);
-                        if (disc && disc.turns.length > 0) {
-                            const turn = disc.turns[disc.turns.length - 1];
-                            turn.completedAt = Date.now();
-                            disc.updatedAt = Date.now();
+                        const nextBlocks = applyDiscussionStreamEvent(allBlocks, {
+                            event: 'discussion_turn_end',
+                            discussionId: data.discussionId,
+                            turnId: data.turnId,
+                            panelistId: data.panelistId as DiscussionBlock['turns'][number]['panelistId'],
+                            round: data.round
+                        }, Date.now());
+                        if (nextBlocks !== allBlocks) {
+                            allBlocks = nextBlocks;
                             this.messages[msgIdx].contentBlocks = [...allBlocks];
                         }
                         break;

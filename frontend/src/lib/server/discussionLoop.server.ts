@@ -1,5 +1,11 @@
 import { env } from '$env/dynamic/private';
-import { getClientForModel, isAIModel, type AIModel } from './aiProvider.server';
+import {
+	getClientForModel,
+	getModelConfig,
+	isAIModel,
+	StreamingThinkFilter,
+	type AIModel
+} from './aiProvider.server';
 import type {
 	DiscussionBlock,
 	DiscussionPanelist,
@@ -12,9 +18,26 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 
 export type DiscussionCallbacks = {
 	onDiscussionStart: (block: DiscussionBlock) => void;
-	onTurnStart: (discussionId: string, panelistId: DiscussionPanelistId, round: number, model: string) => void;
-	onTextDelta: (text: string, panelistId: DiscussionPanelistId) => void;
-	onTurnEnd: (discussionId: string, panelistId: DiscussionPanelistId, round: number) => void;
+	onTurnStart: (event: {
+		discussionId: string;
+		turnId: string;
+		panelistId: DiscussionPanelistId;
+		round: number;
+		model: string;
+	}) => void;
+	onTextDelta: (event: {
+		discussionId: string;
+		turnId: string;
+		panelistId: DiscussionPanelistId;
+		round: number;
+		text: string;
+	}) => void;
+	onTurnEnd: (event: {
+		discussionId: string;
+		turnId: string;
+		panelistId: DiscussionPanelistId;
+		round: number;
+	}) => void;
 	onRoundSkipped: (round: number, reason: string) => void;
 	onError: (message: string) => void;
 };
@@ -29,6 +52,27 @@ type PanelistConfig = {
 	id: DiscussionPanelistId;
 	model: AIModel;
 	temperature: number;
+};
+
+export type ResolvedDiscussionModel = PanelistConfig;
+
+type TurnExecutionResult =
+	| {
+			ok: true;
+			model: AIModel;
+			text: string;
+			usage: { promptTokens: number; completionTokens: number };
+	  }
+	| {
+			ok: false;
+			model: AIModel;
+			error: unknown;
+			partialText: boolean;
+	  };
+
+type TurnRuntime = TurnDef & {
+	discussionId: string;
+	turnId: string;
 };
 
 // --- Panelist Definitions ---
@@ -48,6 +92,7 @@ const MAX_TOKENS_PER_ROLE: Record<string, number> = {
 	synthesis: 1200
 };
 
+
 // --- Turn Schedule ---
 
 type TurnDef = { panelistId: DiscussionPanelistId; round: number; role: string };
@@ -66,13 +111,56 @@ const ROUND_2_TURNS: TurnDef[] = [
 
 const SYNTHESIS_TURN: TurnDef = { panelistId: 'moderator', round: 99, role: 'synthesis' };
 
+const DISCUSSION_MODEL_FALLBACKS: Record<DiscussionPanelistId, AIModel[]> = {
+	bull: [
+		'gpt-4o',
+		'deepseek',
+		'claude-sonnet',
+		'gemini-2.5-flash',
+		'gpt-4o-mini',
+		'o3-mini',
+		'minimax-m2.5',
+		'minimax-m2.5-highspeed',
+		'minimax-text-01'
+	],
+	bear: [
+		'deepseek',
+		'gpt-4o-mini',
+		'gpt-4o',
+		'claude-haiku',
+		'gemini-2.5-flash',
+		'o3-mini',
+		'minimax-m2.5-highspeed',
+		'minimax-m2.5',
+		'minimax-text-01'
+	],
+	moderator: [
+		'deepseek-r1',
+		'gpt-4o',
+		'o3-mini',
+		'gpt-4o-mini',
+		'claude-sonnet',
+		'gemini-2.5-pro',
+		'deepseek',
+		'minimax-m2.5',
+		'minimax-m1'
+	]
+};
+
 // --- Model Resolution ---
 
-function resolveDiscussionModels(): PanelistConfig[] {
+function parseDiscussionEnvModel(value: string | undefined): AIModel | null {
+	const normalized = value?.trim();
+	if (!normalized) return null;
+	if (normalized === 'deepseek-chat') return 'deepseek';
+	return isAIModel(normalized) ? normalized : null;
+}
+
+export function resolveDiscussionModels(): ResolvedDiscussionModel[] {
 	// Check env overrides first
-	const envBull = isAIModel(env.DISCUSSION_BULL_MODEL) ? env.DISCUSSION_BULL_MODEL as AIModel : null;
-	const envBear = isAIModel(env.DISCUSSION_BEAR_MODEL) ? env.DISCUSSION_BEAR_MODEL as AIModel : null;
-	const envMod = isAIModel(env.DISCUSSION_MODERATOR_MODEL) ? env.DISCUSSION_MODERATOR_MODEL as AIModel : null;
+	const envBull = parseDiscussionEnvModel(env.DISCUSSION_BULL_MODEL);
+	const envBear = parseDiscussionEnvModel(env.DISCUSSION_BEAR_MODEL);
+	const envMod = parseDiscussionEnvModel(env.DISCUSSION_MODERATOR_MODEL);
 
 	if (envBull || envBear || envMod) {
 		const fallback = envBull || envBear || envMod;
@@ -86,6 +174,7 @@ function resolveDiscussionModels(): PanelistConfig[] {
 	// Auto-detect from available API keys
 	const hasOpenAI = !!env.OPENAI_API_KEY;
 	const hasDeepSeek = !!env.DEEPSEEK_API_KEY;
+	const hasMiniMax = !!env.MINIMAX_API_KEY;
 
 	if (hasOpenAI && hasDeepSeek) {
 		return [
@@ -111,7 +200,76 @@ function resolveDiscussionModels(): PanelistConfig[] {
 		];
 	}
 
-	throw new Error('No AI provider available. Set OPENAI_API_KEY or DEEPSEEK_API_KEY in .env');
+	if (hasMiniMax) {
+		return [
+			{ id: 'bull', model: 'minimax-text-01', temperature: 0.8 },
+			{ id: 'bear', model: 'minimax-text-01', temperature: 0.5 },
+			{ id: 'moderator', model: 'minimax-m1', temperature: 0.4 }
+		];
+	}
+
+	throw new Error('No AI provider available. Set OPENAI_API_KEY, DEEPSEEK_API_KEY, or MINIMAX_API_KEY in .env');
+}
+
+export function describeDiscussionModels(
+	panelistConfigs: ReadonlyArray<Pick<ResolvedDiscussionModel, 'id' | 'model'>> = resolveDiscussionModels()
+): {
+	modelLabel: string;
+	providerLabel: string;
+} {
+	const providerLabel = Array.from(
+		new Set(panelistConfigs.map((panelist) => getModelConfig(panelist.model).provider))
+	).join('+');
+	const modelLabel = panelistConfigs
+		.map((panelist) => `${panelist.id}=${panelist.model}`)
+		.join(' | ');
+
+	return { modelLabel, providerLabel };
+}
+
+function buildTurnFallbackChain(panelistId: DiscussionPanelistId, primary: AIModel): AIModel[] {
+	return [primary, ...DISCUSSION_MODEL_FALLBACKS[panelistId]].filter(
+		(model, index, chain) => chain.indexOf(model) === index
+	);
+}
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function shouldRetryWithFallback(error: unknown): boolean {
+	const message = getErrorMessage(error).toLowerCase();
+
+	return [
+		'insufficient balance',
+		'insufficient_balance',
+		'quota',
+		'billing',
+		'credit',
+		'rate limit',
+		'rate-limit',
+		'too many requests',
+		'temporarily unavailable',
+		'service unavailable',
+		'overloaded',
+		'capacity',
+		'model unavailable',
+		'model_not_found',
+		'authentication',
+		'unauthorized',
+		'forbidden',
+		'permission',
+		'api key',
+		'is not configured'
+	].some((pattern) => message.includes(pattern));
+}
+
+function createTurnRuntime(discussionId: string, turnDef: TurnDef): TurnRuntime {
+	return {
+		...turnDef,
+		discussionId,
+		turnId: `${discussionId}:${turnDef.panelistId}:r${turnDef.round}:${turnDef.role}`
+	};
 }
 
 // --- System Prompts ---
@@ -244,6 +402,83 @@ async function shouldContinueDebate(
 	}
 }
 
+async function streamTurnWithModel(
+	model: AIModel,
+	messages: ChatCompletionMessageParam[],
+	turnRole: string,
+	temperature: number,
+	callbacks: DiscussionCallbacks,
+	turnRuntime: TurnRuntime
+): Promise<TurnExecutionResult> {
+	let turnText = '';
+	const turnUsage = { promptTokens: 0, completionTokens: 0 };
+
+	try {
+		const { client, apiModel } = getClientForModel(model);
+
+		const createParams: Record<string, unknown> = {
+			model: apiModel,
+			messages,
+			stream: true,
+			stream_options: { include_usage: true }
+		};
+		if (apiModel !== 'deepseek-reasoner') {
+			createParams.temperature = temperature;
+		}
+		createParams.max_tokens = MAX_TOKENS_PER_ROLE[turnRole] ?? 600;
+
+		const stream = await (client.chat.completions.create as Function)(createParams);
+
+		const thinkFilter = new StreamingThinkFilter();
+		for await (const chunk of stream as AsyncIterable<any>) {
+			const raw = chunk.choices?.[0]?.delta?.content;
+			if (raw) {
+				const text = thinkFilter.process(raw);
+				if (text) {
+					turnText += text;
+					callbacks.onTextDelta({
+						discussionId: turnRuntime.discussionId,
+						turnId: turnRuntime.turnId,
+						panelistId: turnRuntime.panelistId,
+						round: turnRuntime.round,
+						text
+					});
+				}
+			}
+			if (chunk.usage) {
+				turnUsage.promptTokens = chunk.usage.prompt_tokens ?? 0;
+				turnUsage.completionTokens = chunk.usage.completion_tokens ?? 0;
+			}
+		}
+
+		const trailingText = thinkFilter.flush();
+		if (trailingText) {
+			turnText += trailingText;
+			callbacks.onTextDelta({
+				discussionId: turnRuntime.discussionId,
+				turnId: turnRuntime.turnId,
+				panelistId: turnRuntime.panelistId,
+				round: turnRuntime.round,
+				text: trailingText
+			});
+		}
+
+		return {
+			ok: true,
+			model,
+			text: turnText,
+			usage: turnUsage
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			model,
+			error,
+			partialText: turnText.length > 0
+		};
+	}
+}
+
 // --- Execute a single turn ---
 
 async function executeTurn(
@@ -256,7 +491,15 @@ async function executeTurn(
 	discussionId: string,
 	callbacks: DiscussionCallbacks
 ): Promise<void> {
-	callbacks.onTurnStart(discussionId, turnDef.panelistId, turnDef.round, pConfig.model);
+	const startedAt = Date.now();
+	const turnRuntime = createTurnRuntime(discussionId, turnDef);
+	callbacks.onTurnStart({
+		discussionId,
+		turnId: turnRuntime.turnId,
+		panelistId: turnDef.panelistId,
+		round: turnDef.round,
+		model: pConfig.model
+	});
 
 	try {
 		const systemPrompt = buildSystemPrompt(turnDef.panelistId, topic, turnDef.role);
@@ -294,53 +537,64 @@ async function executeTurn(
 			});
 		}
 
-		const { client, apiModel } = getClientForModel(pConfig.model);
+		const modelChain = buildTurnFallbackChain(turnDef.panelistId, pConfig.model);
+		let result: TurnExecutionResult | null = null;
 
-		// DeepSeek-R1 (deepseek-reasoner) doesn't support temperature parameter
-		const createParams: Record<string, unknown> = {
-			model: apiModel,
-			messages,
-			stream: true,
-			stream_options: { include_usage: true }
-		};
-		if (apiModel !== 'deepseek-reasoner') {
-			createParams.temperature = pConfig.temperature;
+		for (let index = 0; index < modelChain.length; index++) {
+			const model = modelChain[index];
+			const attempt = await streamTurnWithModel(
+				model,
+				messages,
+				turnDef.role,
+				pConfig.temperature,
+				callbacks,
+				turnRuntime
+			);
+
+			if (attempt.ok) {
+				result = attempt;
+				break;
+			}
+
+			const nextModel = modelChain[index + 1];
+			if (!nextModel || attempt.partialText || !shouldRetryWithFallback(attempt.error)) {
+				result = attempt;
+				break;
+			}
+
+			console.warn(
+				`[BigLot.ai] Discussion fallback for ${turnDef.panelistId}: ${model} failed (${getErrorMessage(attempt.error)}). Retrying with ${nextModel}.`
+			);
 		}
-		createParams.max_tokens = MAX_TOKENS_PER_ROLE[turnDef.role] ?? 600;
 
-		const stream = await (client.chat.completions.create as Function)(createParams);
+		if (!result || !result.ok) {
+			throw result?.error ?? new Error('Unknown error during discussion turn');
+		}
 
-		let turnText = '';
-		let turnUsage = { promptTokens: 0, completionTokens: 0 };
-		for await (const chunk of stream as AsyncIterable<any>) {
-			const text = chunk.choices?.[0]?.delta?.content;
-			if (text) {
-				turnText += text;
-				callbacks.onTextDelta(text, turnDef.panelistId);
-			}
-			if (chunk.usage) {
-				turnUsage.promptTokens = chunk.usage.prompt_tokens ?? 0;
-				turnUsage.completionTokens = chunk.usage.completion_tokens ?? 0;
-			}
+		if (result.model !== pConfig.model) {
+			pConfig.model = result.model;
+			const panelist = discussionBlock.panelists.find((entry) => entry.id === turnDef.panelistId);
+			if (panelist) panelist.model = result.model;
 		}
 
 		completedTurns.push({
 			panelistId: turnDef.panelistId,
 			round: turnDef.round,
-			content: turnText
+			content: result.text
 		});
 
 		discussionBlock.turns.push({
+			turnId: turnRuntime.turnId,
 			panelistId: turnDef.panelistId,
 			round: turnDef.round,
-			content: turnText,
-			model: pConfig.model,
-			usage: turnUsage,
-			startedAt: Date.now(),
+			content: result.text,
+			model: result.model,
+			usage: result.usage,
+			startedAt,
 			completedAt: Date.now()
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Unknown error during discussion turn';
+		const message = getErrorMessage(err);
 		callbacks.onError(`${PANELIST_META[turnDef.panelistId].name} error: ${message}`);
 
 		completedTurns.push({
@@ -350,16 +604,22 @@ async function executeTurn(
 		});
 
 		discussionBlock.turns.push({
+			turnId: turnRuntime.turnId,
 			panelistId: turnDef.panelistId,
 			round: turnDef.round,
 			content: `[Error: ${message}]`,
 			model: pConfig.model,
-			startedAt: Date.now(),
+			startedAt,
 			completedAt: Date.now()
 		});
 	}
 
-	callbacks.onTurnEnd(discussionId, turnDef.panelistId, turnDef.round);
+	callbacks.onTurnEnd({
+		discussionId,
+		turnId: turnRuntime.turnId,
+		panelistId: turnDef.panelistId,
+		round: turnDef.round
+	});
 }
 
 // --- Main Loop ---

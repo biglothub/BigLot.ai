@@ -473,21 +473,31 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                             onDiscussionStart: (block) => {
                                 controller.enqueue(encoder.encode(sseEvent('discussion_start', { block })));
                             },
-                            onTurnStart: (discussionId, panelistId, round, model) => {
+                            onTurnStart: ({ discussionId, turnId, panelistId, round, model }) => {
                                 controller.enqueue(
                                     encoder.encode(
-                                        sseEvent('discussion_turn_start', { discussionId, panelistId, round, model })
+                                        sseEvent('discussion_turn_start', { discussionId, turnId, panelistId, round, model })
                                     )
                                 );
                             },
-                            onTextDelta: (text, panelistId) => {
+                            onTextDelta: ({ discussionId, turnId, panelistId, round, text }) => {
                                 streamedText += text;
-                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text, panelistId })));
-                            },
-                            onTurnEnd: (discussionId, panelistId, round) => {
                                 controller.enqueue(
                                     encoder.encode(
-                                        sseEvent('discussion_turn_end', { discussionId, panelistId, round })
+                                        sseEvent('discussion_text_delta', {
+                                            discussionId,
+                                            turnId,
+                                            panelistId,
+                                            round,
+                                            content: text
+                                        })
+                                    )
+                                );
+                            },
+                            onTurnEnd: ({ discussionId, turnId, panelistId, round }) => {
+                                controller.enqueue(
+                                    encoder.encode(
+                                        sseEvent('discussion_turn_end', { discussionId, turnId, panelistId, round })
                                     )
                                 );
                             },

@@ -3,7 +3,9 @@ import { env } from '$env/dynamic/private';
 import { createDiscussionCallbacks } from '$lib/__test__/helpers/mockCallbacks';
 
 // Mock aiProvider to return controllable clients
-vi.mock('./aiProvider.server', () => {
+vi.mock('./aiProvider.server', async () => {
+	const actual = await vi.importActual<typeof import('./aiProvider.server')>('./aiProvider.server');
+
 	const createStreamingClient = (text: string) => ({
 		chat: {
 			completions: {
@@ -45,13 +47,18 @@ vi.mock('./aiProvider.server', () => {
 	});
 
 	return {
-		isAIModel: vi.fn((val: string) => ['gpt-4o', 'gpt-4o-mini', 'deepseek', 'deepseek-r1'].includes(val)),
+		...actual,
+		isAIModel: vi.fn((val: string) => actual.isAIModel(val)),
 		getClientForModel: vi.fn((model: string) => {
 			const responses: Record<string, string> = {
 				'gpt-4o': 'Bull perspective text',
 				'gpt-4o-mini': 'Bear perspective text',
 				'deepseek': 'DeepSeek response',
-				'deepseek-r1': 'Reasoner response'
+				'deepseek-r1': 'Reasoner response',
+				'minimax-text-01': 'MiniMax text',
+				'minimax-m1': 'MiniMax judge',
+				'minimax-m2.5': 'MiniMax M2.5 response',
+				'minimax-m2.5-highspeed': 'MiniMax M2.5 Highspeed response'
 			};
 			const client = createStreamingClient(responses[model] || 'Default text');
 			return {
@@ -125,19 +132,32 @@ describe('runDiscussionLoop', () => {
 		expect(onTurnStartMock.mock.calls.length).toBeGreaterThanOrEqual(4);
 	});
 
-	it('streams text deltas with panelist ID', async () => {
+	it('reuses the same turnId across start, delta, end, and final block output', async () => {
 		setEnv({ OPENAI_API_KEY: 'sk-test' });
 
 		const callbacks = createDiscussionCallbacks();
-		await runDiscussionLoop(createConfig({ callbacks }));
+		const result = await runDiscussionLoop(createConfig({ callbacks }));
+		const block = result[0] as any;
+		const onTurnStartMock = callbacks.onTurnStart as Mock;
 		const onTextDeltaMock = callbacks.onTextDelta as Mock;
+		const onTurnEndMock = callbacks.onTurnEnd as Mock;
 
-		// onTextDelta should have been called with text and panelist IDs
-		expect(callbacks.onTextDelta).toHaveBeenCalled();
-		const panelistIds = onTextDeltaMock.mock.calls.map((call) => call[1]);
-		expect(panelistIds).toContain('moderator');
-		expect(panelistIds).toContain('bull');
-		expect(panelistIds).toContain('bear');
+		const startEvents = onTurnStartMock.mock.calls.map(([event]) => event);
+		const deltaEvents = onTextDeltaMock.mock.calls.map(([event]) => event);
+		const endEvents = onTurnEndMock.mock.calls.map(([event]) => event);
+		const blockTurnIds = block.turns.map((turn: any) => turn.turnId);
+		const startedTurnIds = startEvents.map((event: any) => event.turnId);
+		const endedTurnIds = endEvents.map((event: any) => event.turnId);
+
+		expect(new Set(startedTurnIds).size).toBe(startEvents.length);
+		expect(blockTurnIds).toEqual(startedTurnIds);
+		expect(endedTurnIds).toEqual(startedTurnIds);
+		expect(deltaEvents.length).toBeGreaterThan(0);
+
+		for (const event of deltaEvents) {
+			expect(startedTurnIds).toContain(event.turnId);
+			expect(typeof event.panelistId).toBe('string');
+		}
 	});
 
 	it('accumulates total usage across turns', async () => {
@@ -150,6 +170,7 @@ describe('runDiscussionLoop', () => {
 		expect(block.totalUsage.promptTokens).toBeGreaterThan(0);
 		expect(block.totalUsage.completionTokens).toBeGreaterThan(0);
 	});
+
 
 	it('uses env override models when set', async () => {
 		setEnv({
@@ -174,7 +195,7 @@ describe('runDiscussionLoop', () => {
 		await expect(runDiscussionLoop(createConfig())).rejects.toThrow('No AI provider');
 	});
 
-	it('handles error in a turn gracefully', async () => {
+	it('handles non-retriable turn errors gracefully', async () => {
 		setEnv({ OPENAI_API_KEY: 'sk-test' });
 
 		// Make getClientForModel throw for one specific model to simulate error
@@ -184,7 +205,7 @@ describe('runDiscussionLoop', () => {
 			callCount++;
 			// Fail on the 2nd call (bull round 1)
 			if (callCount === 2) {
-				throw new Error('Model unavailable');
+				throw new Error('Prompt serialization failed');
 			}
 			const client = {
 				chat: {
@@ -218,5 +239,107 @@ describe('runDiscussionLoop', () => {
 
 		// Should have called onError
 		expect(callbacks.onError).toHaveBeenCalled();
+	});
+
+	it('falls back to another provider when MiniMax returns insufficient balance', async () => {
+		setEnv({
+			OPENAI_API_KEY: 'sk-test',
+			MINIMAX_API_KEY: 'sk-minimax-test',
+			DISCUSSION_BULL_MODEL: 'minimax-text-01',
+			DISCUSSION_BEAR_MODEL: 'minimax-text-01',
+			DISCUSSION_MODERATOR_MODEL: 'minimax-m1'
+		});
+
+		const createStreamingClient = (text: string) => ({
+			chat: {
+				completions: {
+					create: vi.fn(async (params: any) => {
+						if (params.stream) {
+							return {
+								[Symbol.asyncIterator]() {
+									let sent = false;
+									let done = false;
+									return {
+										async next() {
+											if (!sent) {
+												sent = true;
+												return {
+													done: false,
+													value: {
+														choices: [{ delta: { content: text } }],
+														usage: { prompt_tokens: 10, completion_tokens: 20 }
+													}
+												};
+											}
+											if (!done) {
+												done = true;
+												return { done: false, value: { choices: [{ delta: {}, finish_reason: 'stop' }] } };
+											}
+											return { done: true, value: undefined };
+										}
+									};
+								}
+							};
+						}
+
+						return {
+							choices: [{ message: { content: 'CONTINUE' } }]
+						};
+					})
+				}
+			}
+		});
+
+		const createFailingClient = () => ({
+			chat: {
+				completions: {
+					create: vi.fn(async () => {
+						throw new Error('insufficient balance (1008)');
+					})
+				}
+			}
+		});
+
+		const { getClientForModel } = await import('./aiProvider.server');
+		(getClientForModel as any).mockImplementation((model: string) => {
+			if (model === 'minimax-text-01' || model === 'minimax-m1') {
+				return {
+					client: createFailingClient(),
+					apiModel: model,
+					provider: 'minimax',
+					supportsImageInput: false
+				};
+			}
+
+			const openAiResponses: Record<string, string> = {
+				'gpt-4o': 'Fallback gpt-4o response',
+				'gpt-4o-mini': 'Fallback gpt-4o-mini response',
+				'o3-mini': 'Fallback o3-mini response'
+			};
+			const text = openAiResponses[model];
+			if (text) {
+				return {
+					client: createStreamingClient(text),
+					apiModel: model,
+					provider: 'openai',
+					supportsImageInput: false
+				};
+			}
+
+			throw new Error(`${model} is not configured in .env`);
+		});
+
+		const callbacks = createDiscussionCallbacks();
+		const result = await runDiscussionLoop(createConfig({ callbacks }));
+		const block = result[0] as any;
+
+		expect(block.status).toBe('complete');
+		expect(block.turns.some((turn: any) => String(turn.content).includes('[Error:'))).toBe(false);
+		expect(block.turns.some((turn: any) => turn.model === 'gpt-4o')).toBe(true);
+		expect(block.turns.some((turn: any) => turn.model === 'gpt-4o-mini')).toBe(true);
+		expect(block.panelists.find((p: any) => p.id === 'bull').model).toBe('gpt-4o');
+		expect(block.panelists.find((p: any) => p.id === 'bear').model).toBe('gpt-4o-mini');
+		expect(block.panelists.find((p: any) => p.id === 'moderator').model).toBe('gpt-4o');
+		expect(callbacks.onError).not.toHaveBeenCalled();
 	});
 });
