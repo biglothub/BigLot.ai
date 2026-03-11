@@ -73,7 +73,10 @@ type TurnExecutionResult =
 type TurnRuntime = TurnDef & {
 	discussionId: string;
 	turnId: string;
+	language: DiscussionLanguage;
 };
+
+type DiscussionLanguage = 'thai' | 'english';
 
 // --- Panelist Definitions ---
 
@@ -93,8 +96,7 @@ const MAX_TOKENS_PER_ROLE: Record<string, number> = {
 };
 
 const MAX_TURN_CONTINUATIONS = 2;
-const CONTINUE_TURN_PROMPT =
-	'Continue exactly from where you stopped. Do not restart, summarize, or repeat prior points. Begin with the unfinished sentence and keep the same language and markdown structure.';
+const THAI_CHAR_RE = /[\u0E00-\u0E7F]/;
 
 // --- Turn Schedule ---
 
@@ -267,20 +269,112 @@ function shouldRetryWithFallback(error: unknown): boolean {
 	].some((pattern) => message.includes(pattern));
 }
 
-function createTurnRuntime(discussionId: string, turnDef: TurnDef): TurnRuntime {
+function createTurnRuntime(
+	discussionId: string,
+	turnDef: TurnDef,
+	language: DiscussionLanguage
+): TurnRuntime {
 	return {
 		...turnDef,
 		discussionId,
-		turnId: `${discussionId}:${turnDef.panelistId}:r${turnDef.round}:${turnDef.role}`
+		turnId: `${discussionId}:${turnDef.panelistId}:r${turnDef.round}:${turnDef.role}`,
+		language
 	};
 }
 
 // --- System Prompts ---
 
-function buildSystemPrompt(panelistId: DiscussionPanelistId, topic: string, turnRole: string): string {
-	const langInstruction = 'Always respond in the same language as the user\'s question. If the user writes in Thai, respond in Thai. If in English, respond in English.';
+function extractMessageText(content: ChatCompletionMessageParam['content'] | undefined): string {
+	if (typeof content === 'string') return content;
+	if (!Array.isArray(content)) return '';
+
+	return content
+		.map((part) => {
+			if (part && typeof part === 'object' && 'type' in part && part.type === 'text' && 'text' in part) {
+				return typeof part.text === 'string' ? part.text : '';
+			}
+			return '';
+		})
+		.join('\n')
+		.trim();
+}
+
+function resolveDiscussionLanguage(
+	topic: string,
+	conversationHistory: ChatCompletionMessageParam[]
+): DiscussionLanguage {
+	const normalizedTopic = topic.trim();
+	if (normalizedTopic.length > 0) {
+		return THAI_CHAR_RE.test(normalizedTopic) ? 'thai' : 'english';
+	}
+
+	const latestUserMessage = [...conversationHistory]
+		.reverse()
+		.find((message) => message.role === 'user');
+	const latestUserText = extractMessageText(latestUserMessage?.content);
+	return THAI_CHAR_RE.test(latestUserText) ? 'thai' : 'english';
+}
+
+function buildLangInstruction(language: DiscussionLanguage): string {
+	if (language === 'thai') {
+		return 'ตอบเป็นภาษาไทยตลอดทั้งคำตอบ หากจำเป็นต้องใช้คำอังกฤษ ให้ใช้เฉพาะชื่อสินทรัพย์ สัญลักษณ์ หรือคำเฉพาะที่หลีกเลี่ยงไม่ได้ และอย่าเปลี่ยนหัวข้อหรือคำอธิบายหลักเป็นภาษาอังกฤษ.';
+	}
+
+	return 'Always respond in English throughout the entire answer unless a quoted term or ticker must remain in another language.';
+}
+
+function buildContinueTurnPrompt(language: DiscussionLanguage): string {
+	if (language === 'thai') {
+		return 'ตอบต่อจากจุดที่ค้างไว้ทันที โดยเริ่มจากประโยคที่ยังไม่จบ ห้ามเริ่มใหม่ ห้ามสรุปซ้ำ ห้ามแปลเป็นภาษาอังกฤษ และให้คงภาษาไทยกับโครงสร้าง markdown เดิมไว้.';
+	}
+
+	return 'Continue exactly from where you stopped. Do not restart, summarize, or repeat prior points. Begin with the unfinished sentence and keep the same language and markdown structure.';
+}
+
+function buildRoundLabel(round: number, language: DiscussionLanguage): string {
+	if (language === 'thai') {
+		if (round === 0) return 'คำเปิดการพิจารณา';
+		if (round === 99) return 'คำตัดสิน';
+		return `รอบ ${round}`;
+	}
+
+	if (round === 0) return 'Introduction';
+	if (round === 99) return 'Ruling';
+	return `Round ${round}`;
+}
+
+function buildContextMessage(context: string, language: DiscussionLanguage): string {
+	return language === 'thai'
+		? `บริบทการสนทนาก่อนหน้า:\n${context}`
+		: `Previous conversation context:\n${context}`;
+}
+
+function buildTranscriptTurnMessage(transcript: string, language: DiscussionLanguage): string {
+	return language === 'thai'
+		? `นี่คือการอภิปรายก่อนหน้าทั้งหมด:${transcript}\n\nตอนนี้ถึงตาของคุณ ให้ตอบตามบทบาทของคุณ`
+		: `Here is the debate so far:${transcript}\n\nNow it's your turn. Respond as your role.`;
+}
+
+function buildSystemPrompt(
+	panelistId: DiscussionPanelistId,
+	topic: string,
+	turnRole: string,
+	language: DiscussionLanguage
+): string {
+	const langInstruction = buildLangInstruction(language);
 
 	if (panelistId === 'moderator' && turnRole === 'intro') {
+		if (language === 'thai') {
+			return [
+				'คุณเป็นผู้พิพากษาที่กำลังเปิดการอภิปรายแบบ Bull vs Bear ในหัวข้อการเงิน/การเทรด.',
+				`ประเด็นที่ศาลจะพิจารณา: "${topic}"`,
+				'ภายใน 2-3 ประโยค: เปิดการพิจารณา วางกรอบคำถามหลัก และแจ้งทั้งสองฝ่ายว่าหลังรับฟังครบแล้วคุณจะตัดสินชี้ขาด.',
+				'ต้องวางตัวเป็นกลางในคำเปิดการพิจารณา อย่าแสดงธงล่วงหน้าว่าจะตัดสินฝ่ายใด.',
+				'ใช้น้ำเสียงหนักแน่น กระชับ และเป็นทางการ.',
+				langInstruction
+			].join('\n');
+		}
+
 		return [
 			'You are a presiding judge opening a formal Bull vs Bear proceeding on a financial/trading topic.',
 			`The matter before the court: "${topic}"`,
@@ -292,6 +386,22 @@ function buildSystemPrompt(panelistId: DiscussionPanelistId, topic: string, turn
 	}
 
 	if (panelistId === 'moderator' && turnRole === 'synthesis') {
+		if (language === 'thai') {
+			return [
+				'คุณเป็นผู้พิพากษาที่กำลังอ่านคำตัดสินสุดท้ายในการอภิปรายแบบ Bull vs Bear.',
+				`ประเด็นที่ศาลพิจารณาคือ: "${topic}"`,
+				'คุณได้อ่านข้อโต้แย้งและคำโต้กลับทั้งหมดแล้ว คำตัดสินของคุณต้อง:',
+				'1. **ชั่งน้ำหนักหลักฐาน**: ประเมินคุณภาพ ความเฉพาะเจาะจง และความสมเหตุสมผลของแต่ละฝ่าย ไม่ใช่แค่สรุปรายการประเด็น',
+				'2. **ชี้ฝ่ายที่เหนือกว่า**: ระบุให้ชัดว่าฝ่าย Bull หรือ Bear มีภาพรวมที่น่าเชื่อถือกว่าพร้อมเหตุผล',
+				'3. **อ่านคำตัดสิน**: เริ่มต้นด้วยคำตัดสินที่ชัดเจน เช่น "ศาลตัดสินให้เหตุผลของฝ่าย [Bull/Bear] มีน้ำหนักมากกว่า" แล้วให้เหตุผลหลัก 2-3 ข้อ',
+				'4. **ยอมรับจุดที่อีกฝ่ายยกได้ดี**: ระบุ 1-2 จุดแข็งจากฝ่ายที่แพ้ซึ่งทำให้ศาลต้องชั่งใจ',
+				'5. **ให้คำแนะนำ**: ปิดท้ายด้วยข้อสรุปเชิงปฏิบัติที่ผู้อ่านนำไปใช้ได้',
+				'ต้องตัดสินอย่างชัดเจน หลีกเลี่ยงคำตอบกึ่งกลางแบบ "ทั้งสองฝ่ายมีเหตุผลพอ ๆ กัน".',
+				'จัดโครงสร้างผลลัพธ์ด้วย markdown headers ภาษาไทย: ## คำตัดสิน, ## เหตุผล, ## จุดที่อีกฝ่ายยกได้ดี, ## คำแนะนำ',
+				langInstruction
+			].join('\n');
+		}
+
 		return [
 			'You are a presiding judge delivering your final ruling in a Bull vs Bear proceeding.',
 			`The matter before the court was: "${topic}"`,
@@ -308,46 +418,79 @@ function buildSystemPrompt(panelistId: DiscussionPanelistId, topic: string, turn
 	}
 
 	if (panelistId === 'bull') {
-		const base = [
-			'You are a bullish market analyst participating in a structured debate.',
-			`The topic is: "${topic}"`,
-			'Argue the optimistic/bullish case. Be specific with data points, scenarios, and reasoning.',
-			'Be persuasive but professional. Acknowledge risks briefly but focus on upside catalysts.',
-			langInstruction
-		];
+		const base =
+			language === 'thai'
+				? [
+						'คุณเป็นนักวิเคราะห์ตลาดสายกระทิงที่กำลังเข้าร่วมการอภิปรายแบบมีโครงสร้าง.',
+						`หัวข้อคือ: "${topic}"`,
+						'ให้เหตุผลฝั่งบวก/ฝั่งกระทิงอย่างเฉพาะเจาะจง ใช้ข้อมูล สมมติฐาน และตรรกะที่ชัดเจน.',
+						'โน้มน้าวอย่างมืออาชีพ กล่าวถึงความเสี่ยงสั้น ๆ ได้ แต่ให้น้ำหนักกับปัจจัยหนุนขาขึ้นเป็นหลัก.',
+						langInstruction
+					]
+				: [
+						'You are a bullish market analyst participating in a structured debate.',
+						`The topic is: "${topic}"`,
+						'Argue the optimistic/bullish case. Be specific with data points, scenarios, and reasoning.',
+						'Be persuasive but professional. Acknowledge risks briefly but focus on upside catalysts.',
+						langInstruction
+					];
 		if (turnRole === 'rebuttal') {
-			base.push('This is the REBUTTAL round. You must directly address and counter the Bear analyst\'s specific arguments from the previous round. Do not simply repeat your initial points.');
+			base.push(
+				language === 'thai'
+					? 'นี่คือรอบโต้กลับ คุณต้องตอบโต้ข้อโต้แย้งเฉพาะของฝ่าย Bear จากรอบก่อนหน้าโดยตรง ห้ามแค่พูดซ้ำประเด็นเดิม.'
+					: 'This is the REBUTTAL round. You must directly address and counter the Bear analyst\'s specific arguments from the previous round. Do not simply repeat your initial points.'
+			);
 		}
 		return base.join('\n');
 	}
 
 	if (panelistId === 'bear') {
-		const base = [
-			'You are a bearish/risk-aware market analyst participating in a structured debate.',
-			`The topic is: "${topic}"`,
-			'Argue the cautious/pessimistic case. Highlight risks, overvaluations, macro headwinds, and downside scenarios.',
-			'Be persuasive but professional. Acknowledge potential upside briefly but focus on risk factors.',
-			langInstruction
-		];
+		const base =
+			language === 'thai'
+				? [
+						'คุณเป็นนักวิเคราะห์ตลาดสายหมีหรือสายระวังความเสี่ยงที่กำลังเข้าร่วมการอภิปรายแบบมีโครงสร้าง.',
+						`หัวข้อคือ: "${topic}"`,
+						'ให้เหตุผลฝั่งลบ/ฝั่งระวังความเสี่ยง โดยเน้นความเสี่ยง มูลค่าที่ตึงตัว ปัจจัยมหภาคกดดัน และภาพ downside อย่างชัดเจน.',
+						'โน้มน้าวอย่างมืออาชีพ กล่าวถึงโอกาสขาขึ้นได้สั้น ๆ แต่ให้น้ำหนักกับปัจจัยเสี่ยงเป็นหลัก.',
+						langInstruction
+					]
+				: [
+						'You are a bearish/risk-aware market analyst participating in a structured debate.',
+						`The topic is: "${topic}"`,
+						'Argue the cautious/pessimistic case. Highlight risks, overvaluations, macro headwinds, and downside scenarios.',
+						'Be persuasive but professional. Acknowledge potential upside briefly but focus on risk factors.',
+						langInstruction
+					];
 		if (turnRole === 'rebuttal') {
-			base.push('This is the REBUTTAL round. You must directly address and counter the Bull analyst\'s specific arguments from the previous round. Do not simply repeat your initial points.');
+			base.push(
+				language === 'thai'
+					? 'นี่คือรอบโต้กลับ คุณต้องตอบโต้ข้อโต้แย้งเฉพาะของฝ่าย Bull จากรอบก่อนหน้าโดยตรง ห้ามแค่พูดซ้ำประเด็นเดิม.'
+					: 'This is the REBUTTAL round. You must directly address and counter the Bull analyst\'s specific arguments from the previous round. Do not simply repeat your initial points.'
+			);
 		}
 		return base.join('\n');
 	}
 
-	return `You are a financial analyst discussing "${topic}". ${langInstruction}`;
+	return language === 'thai'
+		? `คุณเป็นนักวิเคราะห์การเงินที่กำลังอภิปรายเรื่อง "${topic}". ${langInstruction}`
+		: `You are a financial analyst discussing "${topic}". ${langInstruction}`;
 }
 
-function formatTranscript(completedTurns: { panelistId: DiscussionPanelistId; round: number; content: string }[]): string {
+function formatTranscript(
+	completedTurns: { panelistId: DiscussionPanelistId; round: number; content: string }[],
+	language: DiscussionLanguage
+): string {
 	if (completedTurns.length === 0) return '';
 
 	const lines = completedTurns.map((t) => {
 		const meta = PANELIST_META[t.panelistId];
-		const roundLabel = t.round === 0 ? 'Introduction' : t.round === 99 ? 'Ruling' : `Round ${t.round}`;
+		const roundLabel = buildRoundLabel(t.round, language);
 		return `[${meta.emoji} ${meta.name} — ${roundLabel}]:\n${t.content}`;
 	});
 
-	return '\n\n--- Debate Transcript ---\n' + lines.join('\n\n');
+	return language === 'thai'
+		? '\n\n--- บันทึกการอภิปราย ---\n' + lines.join('\n\n')
+		: '\n\n--- Debate Transcript ---\n' + lines.join('\n\n');
 }
 
 // --- AI Auto-Stop: evaluate whether Round 2 is needed ---
@@ -355,9 +498,10 @@ function formatTranscript(completedTurns: { panelistId: DiscussionPanelistId; ro
 async function shouldContinueDebate(
 	topic: string,
 	completedTurns: { panelistId: DiscussionPanelistId; round: number; content: string }[],
-	moderatorConfig: PanelistConfig
+	moderatorConfig: PanelistConfig,
+	language: DiscussionLanguage
 ): Promise<boolean> {
-	const transcript = formatTranscript(completedTurns);
+	const transcript = formatTranscript(completedTurns, language);
 
 	// Use a fast, cheap model for the evaluation call
 	// Prefer gpt-4o-mini or the moderator's own model
@@ -488,7 +632,7 @@ async function streamTurnWithModel(
 			requestMessages = [
 				...messages,
 				{ role: 'assistant', content: turnText },
-				{ role: 'user', content: CONTINUE_TURN_PROMPT }
+				{ role: 'user', content: buildContinueTurnPrompt(turnRuntime.language) }
 			];
 		}
 
@@ -518,10 +662,11 @@ async function executeTurn(
 	completedTurns: { panelistId: DiscussionPanelistId; round: number; content: string }[],
 	discussionBlock: DiscussionBlock,
 	discussionId: string,
+	discussionLanguage: DiscussionLanguage,
 	callbacks: DiscussionCallbacks
 ): Promise<void> {
 	const startedAt = Date.now();
-	const turnRuntime = createTurnRuntime(discussionId, turnDef);
+	const turnRuntime = createTurnRuntime(discussionId, turnDef, discussionLanguage);
 	callbacks.onTurnStart({
 		discussionId,
 		turnId: turnRuntime.turnId,
@@ -531,8 +676,13 @@ async function executeTurn(
 	});
 
 	try {
-		const systemPrompt = buildSystemPrompt(turnDef.panelistId, topic, turnDef.role);
-		const transcript = formatTranscript(completedTurns);
+		const systemPrompt = buildSystemPrompt(
+			turnDef.panelistId,
+			topic,
+			turnDef.role,
+			discussionLanguage
+		);
+		const transcript = formatTranscript(completedTurns, discussionLanguage);
 
 		const messages: ChatCompletionMessageParam[] = [
 			{ role: 'system', content: systemPrompt }
@@ -546,7 +696,7 @@ async function executeTurn(
 		if (recentHistory.length > 0) {
 			const contextStr = recentHistory
 				.map((m) => {
-					const content = typeof m.content === 'string' ? m.content : '';
+					const content = extractMessageText(m.content);
 					return `[${m.role}]: ${content}`;
 				})
 				.join('\n')
@@ -554,7 +704,7 @@ async function executeTurn(
 
 			messages.push({
 				role: 'user',
-				content: `Previous conversation context:\n${contextStr}`
+				content: buildContextMessage(contextStr, discussionLanguage)
 			});
 		}
 
@@ -562,7 +712,7 @@ async function executeTurn(
 		if (transcript) {
 			messages.push({
 				role: 'user',
-				content: `Here is the debate so far:${transcript}\n\nNow it's your turn. Respond as your role.`
+				content: buildTranscriptTurnMessage(transcript, discussionLanguage)
 			});
 		}
 
@@ -657,6 +807,7 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 	const { topic, conversationHistory, callbacks } = config;
 	const panelistConfigs = resolveDiscussionModels();
 	const modelMap = new Map(panelistConfigs.map((p) => [p.id, p]));
+	const discussionLanguage = resolveDiscussionLanguage(topic, conversationHistory);
 
 	const discussionId = `disc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -682,22 +833,57 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 
 	// Phase 1a: Moderator intro (sequential)
 	const introConfig = modelMap.get(INTRO_TURN.panelistId)!;
-	await executeTurn(INTRO_TURN, topic, introConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+	await executeTurn(
+		INTRO_TURN,
+		topic,
+		introConfig,
+		conversationHistory,
+		completedTurns,
+		discussionBlock,
+		discussionId,
+		discussionLanguage,
+		callbacks
+	);
 
 	// Phase 1b: Bull → Bear Round 1 (sequential — Bear sees Bull's argument before responding)
 	for (const turnDef of ROUND_1_ARGUMENTS) {
 		const pConfig = modelMap.get(turnDef.panelistId)!;
-		await executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+		await executeTurn(
+			turnDef,
+			topic,
+			pConfig,
+			conversationHistory,
+			completedTurns,
+			discussionBlock,
+			discussionId,
+			discussionLanguage,
+			callbacks
+		);
 	}
 
 	// Phase 2: AI evaluates whether Round 2 (rebuttal) is needed
 	const moderatorConfig = modelMap.get('moderator')!;
-	const needsRebuttal = await shouldContinueDebate(topic, completedTurns, moderatorConfig);
+	const needsRebuttal = await shouldContinueDebate(
+		topic,
+		completedTurns,
+		moderatorConfig,
+		discussionLanguage
+	);
 
 	if (needsRebuttal) {
 		for (const turnDef of ROUND_2_TURNS) {
 			const pConfig = modelMap.get(turnDef.panelistId)!;
-			await executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+			await executeTurn(
+				turnDef,
+				topic,
+				pConfig,
+				conversationHistory,
+				completedTurns,
+				discussionBlock,
+				discussionId,
+				discussionLanguage,
+				callbacks
+			);
 		}
 	} else {
 		discussionBlock.skippedRounds = [2];
@@ -706,7 +892,17 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 
 	// Phase 3: Judge's Ruling (always runs)
 	const synthConfig = modelMap.get(SYNTHESIS_TURN.panelistId)!;
-	await executeTurn(SYNTHESIS_TURN, topic, synthConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+	await executeTurn(
+		SYNTHESIS_TURN,
+		topic,
+		synthConfig,
+		conversationHistory,
+		completedTurns,
+		discussionBlock,
+		discussionId,
+		discussionLanguage,
+		callbacks
+	);
 
 	// Accumulate total usage
 	discussionBlock.totalUsage = discussionBlock.turns.reduce(

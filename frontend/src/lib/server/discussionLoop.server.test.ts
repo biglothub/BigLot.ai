@@ -90,6 +90,20 @@ function createConfig(overrides: Partial<DiscussionConfig> = {}): DiscussionConf
 	};
 }
 
+function isBullSystemPrompt(prompt: string): boolean {
+	return (
+		prompt.includes('You are a bullish market analyst') ||
+		prompt.includes('คุณเป็นนักวิเคราะห์ตลาดสายกระทิง')
+	);
+}
+
+function isModeratorSynthesisPrompt(prompt: string): boolean {
+	return (
+		prompt.includes('You are a presiding judge delivering your final ruling') ||
+		prompt.includes('คุณเป็นผู้พิพากษาที่กำลังอ่านคำตัดสินสุดท้าย')
+	);
+}
+
 describe('runDiscussionLoop', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -181,6 +195,7 @@ describe('runDiscussionLoop', () => {
 
 		const { getClientForModel } = await import('./aiProvider.server');
 		const streamCallCount = new Map<string, number>();
+		let continuationPrompt = '';
 		(getClientForModel as any).mockImplementation((model: string) => {
 			const client = {
 				chat: {
@@ -191,9 +206,7 @@ describe('runDiscussionLoop', () => {
 							}
 
 							const systemPrompt = params.messages?.[0]?.content ?? '';
-							const isBullTurn =
-								typeof systemPrompt === 'string' &&
-								systemPrompt.includes('You are a bullish market analyst');
+							const isBullTurn = typeof systemPrompt === 'string' && isBullSystemPrompt(systemPrompt);
 							const countKey = `${model}:${isBullTurn ? 'bull' : 'other'}`;
 							const callCount = (streamCallCount.get(countKey) ?? 0) + 1;
 							streamCallCount.set(countKey, callCount);
@@ -208,6 +221,7 @@ describe('runDiscussionLoop', () => {
 									{ choices: [{ delta: {}, finish_reason: 'length' }] }
 								];
 							} else if (isBullTurn && callCount === 2) {
+								continuationPrompt = String(params.messages?.[params.messages.length - 1]?.content ?? '');
 								chunks = [
 									{
 										choices: [{ delta: { content: ' ความปลอดภัยไซเบอร์ต้องติดตาม แต่ระบบยังพัฒนาได้ต่อเนื่อง**' }, finish_reason: null }],
@@ -246,13 +260,138 @@ describe('runDiscussionLoop', () => {
 			return { client, apiModel: model, provider: 'openai', supportsImageInput: true };
 		});
 
-		const result = await runDiscussionLoop(createConfig());
+		const result = await runDiscussionLoop(
+			createConfig({
+				topic: 'บิตคอยน์จะขึ้นต่อไหม?',
+				conversationHistory: [{ role: 'user', content: 'ช่วยวิเคราะห์บิตคอยน์ให้หน่อย' }]
+			})
+		);
 		const block = result[0] as any;
 		const bullTurn = block.turns.find((turn: any) => turn.panelistId === 'bull' && turn.round === 1);
 
 		expect(streamCallCount.get('gpt-4o:bull')).toBe(2);
+		expect(continuationPrompt).toContain('ตอบต่อจากจุดที่ค้างไว้ทันที');
+		expect(continuationPrompt).not.toContain('Continue exactly');
 		expect(bullTurn.content).toContain('**ความเสี่ยงทางเทคโนโลยีและ ความปลอดภัยไซเบอร์');
 		expect(bullTurn.content.endsWith('**')).toBe(true);
+	});
+
+	it('uses Thai synthesis headers for Thai discussions', async () => {
+		setEnv({ OPENAI_API_KEY: 'sk-test' });
+
+		const { getClientForModel } = await import('./aiProvider.server');
+		const streamPrompts: string[] = [];
+		(getClientForModel as any).mockImplementation((model: string) => {
+			const client = {
+				chat: {
+					completions: {
+						create: vi.fn(async (params: any) => {
+							if (params.stream) {
+								streamPrompts.push(String(params.messages?.[0]?.content ?? ''));
+								return {
+									[Symbol.asyncIterator]() {
+										let sent = false;
+										let done = false;
+										return {
+											async next() {
+												if (!sent) {
+													sent = true;
+													return {
+														done: false,
+														value: {
+															choices: [{ delta: { content: 'thai response' } }],
+															usage: { prompt_tokens: 5, completion_tokens: 5 }
+														}
+													};
+												}
+												if (!done) {
+													done = true;
+													return { done: false, value: { choices: [{ delta: {}, finish_reason: 'stop' }] } };
+												}
+												return { done: true, value: undefined };
+											}
+										};
+									}
+								};
+							}
+
+							return { choices: [{ message: { content: 'SKIP' } }] };
+						})
+					}
+				}
+			};
+
+			return { client, apiModel: model, provider: 'openai', supportsImageInput: true };
+		});
+
+		await runDiscussionLoop(
+			createConfig({
+				topic: 'บิตคอยน์จะขึ้นต่อไหม?',
+				conversationHistory: [{ role: 'user', content: 'ช่วยวิเคราะห์บิตคอยน์ให้หน่อย' }]
+			})
+		);
+
+		const synthesisPrompt = streamPrompts.find((prompt) => isModeratorSynthesisPrompt(prompt));
+		expect(synthesisPrompt).toBeDefined();
+		expect(synthesisPrompt).toContain('## คำตัดสิน');
+		expect(synthesisPrompt).toContain('## คำแนะนำ');
+		expect(synthesisPrompt).not.toContain('## Verdict');
+	});
+
+	it('keeps English synthesis headers for English discussions', async () => {
+		setEnv({ OPENAI_API_KEY: 'sk-test' });
+
+		const { getClientForModel } = await import('./aiProvider.server');
+		const streamPrompts: string[] = [];
+		(getClientForModel as any).mockImplementation((model: string) => {
+			const client = {
+				chat: {
+					completions: {
+						create: vi.fn(async (params: any) => {
+							if (params.stream) {
+								streamPrompts.push(String(params.messages?.[0]?.content ?? ''));
+								return {
+									[Symbol.asyncIterator]() {
+										let sent = false;
+										let done = false;
+										return {
+											async next() {
+												if (!sent) {
+													sent = true;
+													return {
+														done: false,
+														value: {
+															choices: [{ delta: { content: 'english response' } }],
+															usage: { prompt_tokens: 5, completion_tokens: 5 }
+														}
+													};
+												}
+												if (!done) {
+													done = true;
+													return { done: false, value: { choices: [{ delta: {}, finish_reason: 'stop' }] } };
+												}
+												return { done: true, value: undefined };
+											}
+										};
+									}
+								};
+							}
+
+							return { choices: [{ message: { content: 'SKIP' } }] };
+						})
+					}
+				}
+			};
+
+			return { client, apiModel: model, provider: 'openai', supportsImageInput: true };
+		});
+
+		await runDiscussionLoop(createConfig());
+
+		const synthesisPrompt = streamPrompts.find((prompt) => isModeratorSynthesisPrompt(prompt));
+		expect(synthesisPrompt).toBeDefined();
+		expect(synthesisPrompt).toContain('## Verdict');
+		expect(synthesisPrompt).not.toContain('## คำตัดสิน');
 	});
 
 	it('uses env override models when set', async () => {
