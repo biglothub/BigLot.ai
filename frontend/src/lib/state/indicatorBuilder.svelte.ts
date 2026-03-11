@@ -31,7 +31,7 @@ class IndicatorBuilderState {
     async generateFromPrompt(prompt: string) {
         this.progress = {
             status: 'submitting',
-            activityLog: [this.createSystemLog('🚀 Submitting to BigLot.ai...')]
+            activityLog: [this.createSystemLog('Submitting to BigLot.ai...')]
         };
 
         try {
@@ -41,7 +41,7 @@ class IndicatorBuilderState {
                 currentStep: 'BigLot.ai is writing your indicator...',
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(`⚙️ Configuring indicator engine...`)
+                    this.createSystemLog(`Configuring indicator engine...`)
                 ]
             };
 
@@ -49,10 +49,10 @@ class IndicatorBuilderState {
             const fetchTimeout = setTimeout(() => controller.abort(), 150_000);
 
             const progressMsgs = [
-                '🔍 Analyzing prompt and matching reference patterns...',
-                '✍️ Generating PineScript v6 indicator code...',
-                '🔧 Building JavaScript preview module...',
-                '✅ Validating and auto-correcting output...',
+                'Analyzing prompt and matching reference patterns...',
+                'Generating PineScript v6 indicator code...',
+                'Building JavaScript preview module...',
+                'Validating and auto-correcting output...',
             ];
             let msgIdx = 0;
             const progressInterval = setInterval(() => {
@@ -92,17 +92,17 @@ class IndicatorBuilderState {
             this.referenceUsed = data.referenceUsed ?? null;
 
             // Hide reference and AI details
-            const refLog = this.createSystemLog('🧠 BigLot.ai expert analysis complete');
+            const refLog = this.createSystemLog('BigLot.ai expert analysis complete');
 
             // Show retry info if retries were needed
             const retryLogs: IndicatorActivityLog[] = [];
             if (data.retryCount > 0) {
-                retryLogs.push(this.createSystemLog(`🔄 Auto-corrected ${data.retryCount} time(s) via validation`));
+                retryLogs.push(this.createSystemLog(`Auto-corrected ${data.retryCount} time(s) via validation`));
             }
             if (data.validationErrors?.length > 0) {
                 const warnings = data.validationErrors.filter((e: any) => e.severity === 'warning');
                 if (warnings.length > 0) {
-                    retryLogs.push(this.createSystemLog(`⚠️ ${warnings.length} warning(s) remaining — review recommended`));
+                    retryLogs.push(this.createSystemLog(`${warnings.length} warning(s) remaining — review recommended`));
                 }
             }
 
