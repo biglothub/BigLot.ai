@@ -36,7 +36,7 @@ type PanelistConfig = {
 const PANELIST_META: Record<DiscussionPanelistId, Omit<DiscussionPanelist, 'model'>> = {
 	bull: { id: 'bull', name: 'Bull Analyst', color: 'green', emoji: '🐂' },
 	bear: { id: 'bear', name: 'Bear Analyst', color: 'red', emoji: '🐻' },
-	moderator: { id: 'moderator', name: 'Moderator', color: 'amber', emoji: '⚖️' }
+	moderator: { id: 'moderator', name: 'Judge', color: 'amber', emoji: '⚖️' }
 };
 
 // --- Max Tokens Per Turn Role ---
@@ -45,7 +45,7 @@ const MAX_TOKENS_PER_ROLE: Record<string, number> = {
 	intro: 200,
 	argument: 600,
 	rebuttal: 500,
-	synthesis: 800
+	synthesis: 1200
 };
 
 // --- Turn Schedule ---
@@ -121,24 +121,27 @@ function buildSystemPrompt(panelistId: DiscussionPanelistId, topic: string, turn
 
 	if (panelistId === 'moderator' && turnRole === 'intro') {
 		return [
-			'You are a neutral moderator opening a structured Bull vs Bear debate on a financial/trading topic.',
-			`The topic is: "${topic}"`,
-			'Write a brief introduction (2-3 sentences) framing the key question and what the debate will explore.',
-			'Do NOT take sides. Be concise.',
+			'You are a presiding judge opening a formal Bull vs Bear proceeding on a financial/trading topic.',
+			`The matter before the court: "${topic}"`,
+			'In 2-3 sentences: open the proceeding, frame the central question, and inform both sides that after hearing all arguments you will deliver a definitive ruling.',
+			'Maintain judicial impartiality in the opening — do not signal which way you will rule.',
+			'Be authoritative and concise.',
 			langInstruction
 		].join('\n');
 	}
 
 	if (panelistId === 'moderator' && turnRole === 'synthesis') {
 		return [
-			'You are a neutral moderator delivering the final synthesis of a Bull vs Bear debate.',
-			`The topic was: "${topic}"`,
-			'You have the full transcript of the debate. Your task:',
-			'1. Identify the 3 strongest points from the Bull side',
-			'2. Identify the 3 strongest points from the Bear side',
-			'3. Highlight areas of agreement',
-			'4. Deliver a balanced conclusion with actionable takeaways',
-			'Be fair, thorough, and structured. Use headers/bullets for clarity.',
+			'You are a presiding judge delivering your final ruling in a Bull vs Bear proceeding.',
+			`The matter before the court was: "${topic}"`,
+			'You have reviewed the full transcript of arguments and rebuttals. Your ruling must:',
+			'1. **Weigh the evidence**: Evaluate the quality, specificity, and logical strength of each side\'s arguments — not just list them.',
+			'2. **Identify the stronger case**: State explicitly which side (Bull or Bear) made the more compelling overall argument and why.',
+			'3. **Deliver the verdict**: Begin with a clear declaration, e.g. "The court rules in favor of the [Bull/Bear] case." Give 2-3 primary reasons for the ruling.',
+			'4. **Acknowledge dissent**: Note the 1-2 strongest points from the losing side that gave the court pause — a fair ruling acknowledges minority merit.',
+			'5. **Issue guidance**: Close with a concrete, actionable conclusion for the reader based on the ruling.',
+			'Be decisive. Avoid wishy-washy "both sides have merit" non-conclusions. A court must rule.',
+			'Structure your output with clear markdown headers: ## Verdict, ## Reasoning, ## Dissenting Points, ## Guidance',
 			langInstruction
 		].join('\n');
 	}
@@ -179,7 +182,7 @@ function formatTranscript(completedTurns: { panelistId: DiscussionPanelistId; ro
 
 	const lines = completedTurns.map((t) => {
 		const meta = PANELIST_META[t.panelistId];
-		const roundLabel = t.round === 0 ? 'Introduction' : t.round === 99 ? 'Synthesis' : `Round ${t.round}`;
+		const roundLabel = t.round === 0 ? 'Introduction' : t.round === 99 ? 'Ruling' : `Round ${t.round}`;
 		return `[${meta.emoji} ${meta.name} — ${roundLabel}]:\n${t.content}`;
 	});
 
@@ -222,7 +225,7 @@ async function shouldContinueDebate(
 		'',
 		'Respond with ONLY one word: CONTINUE or SKIP',
 		'CONTINUE = rebuttal round needed (positions are clearly opposed)',
-		'SKIP = go straight to synthesis (positions are similar or rebuttal would not add value)'
+		'SKIP = go straight to the judge\'s ruling (positions are similar or rebuttal would not add value)'
 	].join('\n');
 
 	try {
@@ -392,11 +395,11 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 	const introConfig = modelMap.get(INTRO_TURN.panelistId)!;
 	await executeTurn(INTRO_TURN, topic, introConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
 
-	// Phase 1b: Bull + Bear Round 1 (parallel — they don't need each other's transcript)
-	await Promise.all(ROUND_1_ARGUMENTS.map((turnDef) => {
+	// Phase 1b: Bull → Bear Round 1 (sequential — Bear sees Bull's argument before responding)
+	for (const turnDef of ROUND_1_ARGUMENTS) {
 		const pConfig = modelMap.get(turnDef.panelistId)!;
-		return executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
-	}));
+		await executeTurn(turnDef, topic, pConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
+	}
 
 	// Phase 2: AI evaluates whether Round 2 (rebuttal) is needed
 	const moderatorConfig = modelMap.get('moderator')!;
@@ -412,7 +415,7 @@ export async function runDiscussionLoop(config: DiscussionConfig): Promise<Conte
 		callbacks.onRoundSkipped(2, 'AI determined positions are similar enough to skip rebuttal');
 	}
 
-	// Phase 3: Synthesis (always runs)
+	// Phase 3: Judge's Ruling (always runs)
 	const synthConfig = modelMap.get(SYNTHESIS_TURN.panelistId)!;
 	await executeTurn(SYNTHESIS_TURN, topic, synthConfig, conversationHistory, completedTurns, discussionBlock, discussionId, callbacks);
 

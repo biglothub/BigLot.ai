@@ -31,7 +31,7 @@
 
     function getRoundLabel(round: number, panelistId: DiscussionPanelistId): string {
         if (round === 0) return 'Introduction';
-        if (round === 99) return 'Final Synthesis';
+        if (round === 99) return 'Final Ruling';
         if (round === 2) return `Round ${round} — Rebuttal`;
         return `Round ${round}`;
     }
@@ -175,14 +175,14 @@
     {#if discussion.skippedRounds?.includes(2)}
         <div class="flex items-center gap-2 py-2 px-4 text-xs text-muted-foreground/60 italic">
             <span>&#x23ED;&#xFE0F;</span>
-            <span>Round 2 (Rebuttal) skipped — positions were similar enough to proceed to synthesis</span>
+            <span>Round 2 (Rebuttal) skipped — positions were similar enough for the court to proceed to its ruling</span>
         </div>
     {/if}
 
     <!-- Status Footer -->
     {#if discussion.status === 'complete'}
         <div class="flex items-center justify-center gap-2 pt-2 text-xs text-muted-foreground/50">
-            <span>Discussion complete</span>
+            <span>Court ruling complete</span>
             <span>&#x2022;</span>
             <span>{discussion.turns.length} turns</span>
             {#if discussion.totalUsage && (discussion.totalUsage.promptTokens + discussion.totalUsage.completionTokens) > 0}
