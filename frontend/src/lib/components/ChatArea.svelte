@@ -163,8 +163,10 @@
                                 {/if}
                             {:else}
                                 {#if message.file_name}
+                                    {@const _ext = message.file_name.split('.').pop()?.toLowerCase()}
+                                    {@const _icon = _ext === 'pdf' ? '📕' : _ext === 'xlsx' || _ext === 'xls' ? '📊' : _ext === 'docx' ? '📝' : '📄'}
                                     <div class="flex items-center gap-1.5 text-xs text-muted-foreground/70 mb-1.5 px-1">
-                                        <span>📄</span>
+                                        <span>{_icon}</span>
                                         <span class="truncate max-w-[220px]" title={message.file_name}>{message.file_name}</span>
                                     </div>
                                 {/if}

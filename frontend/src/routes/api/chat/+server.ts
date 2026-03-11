@@ -243,13 +243,15 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				const langMap: Record<string, string> = {
 					py: 'python', js: 'javascript', ts: 'typescript',
 					json: 'json', csv: 'csv', md: 'markdown',
-					html: 'html', css: 'css', xml: 'xml', yaml: 'yaml', yml: 'yaml'
+					html: 'html', css: 'css', xml: 'xml', yaml: 'yaml', yml: 'yaml',
+					pdf: 'text', xlsx: 'csv', xls: 'csv', docx: 'text'
 				};
 				const lang = langMap[ext] ?? ext;
-				const fileBlock = `[File: ${message.file_name ?? 'attachment'}]
-\`\`\`${lang}
-${message.file_content}
-\`\`\``;
+				const isParsed = ['pdf', 'xlsx', 'xls', 'docx'].includes(ext);
+				const fileHeader = isParsed
+					? `[Extracted text from: ${message.file_name ?? 'attachment'}]`
+					: `[File: ${message.file_name ?? 'attachment'}]`;
+				const fileBlock = `${fileHeader}\n\`\`\`${lang}\n${message.file_content}\n\`\`\``;
 				const userText = message.content ? `\n\n${message.content}` : '';
 				const fullText = fileBlock + userText;
 
