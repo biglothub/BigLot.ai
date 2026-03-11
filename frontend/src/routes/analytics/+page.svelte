@@ -1,16 +1,17 @@
 <script lang="ts">
     import Sidebar from "$lib/components/Sidebar.svelte";
     import { chatState } from "$lib/state/chat.svelte";
-    import { 
-        BarChart3, 
-        MessageSquare, 
-        Bot, 
-        TrendingUp, 
+    import {
+        Activity,
+        BarChart3,
         Calendar,
-        Loader2,
-        RefreshCw
+        Globe,
+        MessageSquare,
+        RefreshCw,
+        Send
     } from "lucide-svelte";
     import { onMount } from "svelte";
+    import { fade, fly } from "svelte/transition";
 
     type AnalyticsResponse = {
         stats: {
@@ -27,224 +28,895 @@
         period: string;
     };
 
+    type ModeRow = {
+        mode: string;
+        label: string;
+        count: number;
+        percentage: number;
+        accent: string;
+    };
+
+    const MODE_META: Record<string, { label: string; accent: string }> = {
+        coach: { label: "Trading Coach", accent: "#d6b57b" },
+        recovery: { label: "Recovery", accent: "#b78368" },
+        analyst: { label: "Market Analyst", accent: "#9db1c7" },
+        pinescript: { label: "PineScript Engineer", accent: "#a28fca" },
+        gold: { label: "Gold Specialist", accent: "#d7a84b" },
+        macro: { label: "Macro Analyst", accent: "#91b0a4" },
+        portfolio: { label: "Portfolio Manager", accent: "#c0cad8" }
+    };
+
     let sidebarOpen = $state(true);
     let isLoading = $state(true);
+    let isRefreshing = $state(false);
     let analytics = $state<AnalyticsResponse | null>(null);
     let error = $state<string | null>(null);
+    let lastLoadedAt = $state<Date | null>(null);
+
+    const periodLabel = $derived(analytics ? formatPeriod(analytics.period) : "Last 7 days");
+    const modeRows = $derived(analytics ? buildModeRows(analytics.agentModes) : []);
 
     onMount(() => {
-        loadAnalytics();
+        void loadAnalytics();
     });
 
-    async function loadAnalytics() {
-        isLoading = true;
+    async function loadAnalytics(mode: "initial" | "refresh" = "initial") {
+        const isFirstLoad = mode === "initial" && analytics === null;
+
+        if (isFirstLoad) {
+            isLoading = true;
+        } else {
+            isRefreshing = true;
+        }
+
         error = null;
-        
+
         try {
             const url = `/api/analytics?biglotUserId=${encodeURIComponent(chatState.biglotUserId)}`;
             const res = await fetch(url);
-            
+
             if (!res.ok) {
-                throw new Error('Failed to load analytics');
+                throw new Error("Failed to load analytics");
             }
-            
+
             analytics = await res.json() as AnalyticsResponse;
-        } catch (e: any) {
-            error = e.message || 'Failed to load analytics';
-            console.error('Analytics error:', e);
+            lastLoadedAt = new Date();
+        } catch (e: unknown) {
+            error = e instanceof Error ? e.message : "Failed to load analytics";
+            console.error("Analytics error:", e);
         } finally {
-            isLoading = false;
+            if (isFirstLoad) {
+                isLoading = false;
+            } else {
+                isRefreshing = false;
+            }
         }
     }
 
-    function getModeLabel(mode: string): string {
-        const labels: Record<string, string> = {
-            'coach': 'Trading Coach',
-            'recovery': 'Recovery',
-            'analyst': 'Market Analyst',
-            'pinescript': 'PineScript Engineer'
-        };
-        return labels[mode] || mode;
+    function buildModeRows(agentModes: Record<string, number>): ModeRow[] {
+        const entries = Object.entries(agentModes);
+        const total = entries.reduce((sum, [, count]) => sum + count, 0);
+
+        return entries
+            .sort(([, a], [, b]) => b - a)
+            .map(([mode, count]) => ({
+                mode,
+                label: getModeLabel(mode),
+                count,
+                percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+                accent: getModeAccent(mode)
+            }));
     }
 
-    function getModeColor(mode: string): string {
-        const colors: Record<string, string> = {
-            'coach': 'bg-green-500',
-            'recovery': 'bg-red-500',
-            'analyst': 'bg-blue-500',
-            'pinescript': 'bg-purple-500'
+    function getModeLabel(mode: string): string {
+        return MODE_META[mode]?.label ?? startCase(mode);
+    }
+
+    function getModeAccent(mode: string): string {
+        return MODE_META[mode]?.accent ?? "#d6b57b";
+    }
+
+    function startCase(value: string): string {
+        return value
+            .replace(/[_-]+/g, " ")
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    function formatPeriod(period: string): string {
+        const labels: Record<string, string> = {
+            last_7_days: "Last 7 days"
         };
-        return colors[mode] || 'bg-gray-500';
+
+        return labels[period] ?? startCase(period);
     }
 
     function formatDate(dateStr: string): string {
-        return new Date(dateStr).toLocaleDateString('th-TH', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric'
-        });
+        return new Intl.DateTimeFormat(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        }).format(new Date(dateStr));
+    }
+
+    function formatRefreshedAt(date: Date): string {
+        return new Intl.DateTimeFormat(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit"
+        }).format(date);
+    }
+
+    function formatNumber(value: number): string {
+        return new Intl.NumberFormat().format(value);
     }
 </script>
+
+<svelte:head>
+    <title>Analytics — BigLot.ai</title>
+</svelte:head>
 
 <div class="flex h-full overflow-hidden bg-background text-foreground font-sans">
     <Sidebar bind:isOpen={sidebarOpen} />
 
-    <main 
-        class="flex-1 flex flex-col overflow-hidden h-full transition-all duration-300"
+    <main
+        class="analytics-main flex-1 overflow-hidden h-full transition-all duration-300"
         class:ml-64={sidebarOpen}
         class:ml-0={!sidebarOpen}
     >
-        <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-border/50">
-            <div class="flex-1">
-                <h1 class="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-white">
-                    Analytics Dashboard
-                </h1>
-                <p class="text-xs text-muted-foreground">
-                    Track your trading assistant usage
-                </p>
-            </div>
-            <button 
-                onclick={loadAnalytics}
-                disabled={isLoading}
-                class="flex items-center gap-2 px-4 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg transition-colors disabled:opacity-50"
-            >
-                <RefreshCw size={16} class={isLoading ? 'animate-spin' : ''} />
-                <span class="text-sm">Refresh</span>
-            </button>
-        </div>
-
-        <!-- Analytics Content -->
-        <div class="flex-1 overflow-y-auto px-6 py-6">
-            {#if isLoading}
-                <div class="flex items-center justify-center h-64">
-                    <Loader2 size={32} class="animate-spin text-primary" />
-                </div>
-            {:else if error}
-                <div class="glass-panel p-8 text-center">
-                    <div class="text-red-400 mb-2">Failed to load analytics</div>
-                    <div class="text-muted-foreground text-sm">{error}</div>
-                </div>
-            {:else if analytics}
-                <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <!-- Total Chats -->
-                    <div class="glass-panel p-5">
-                        <div class="flex items-center gap-3">
-                            <div class="p-2 rounded-lg bg-blue-500/20 text-blue-400">
-                                <MessageSquare size={20} />
-                            </div>
-                            <div>
-                                <div class="text-2xl font-bold">{analytics.stats.totalChats}</div>
-                                <div class="text-xs text-muted-foreground">Total Chats</div>
-                            </div>
-                        </div>
+        <div class="analytics-scroll">
+            <div class="analytics-container">
+                <header class="analytics-hero">
+                    <div class="hero-copy">
+                        <p class="hero-eyebrow">{periodLabel}</p>
+                        <h1 class="hero-title">Personal Analytics</h1>
+                        <p class="hero-description">
+                            A quieter ledger of how you use BigLot.ai. Shared indicator activity is
+                            called out separately until library ownership exists.
+                        </p>
                     </div>
 
-                    <!-- Total Messages -->
-                    <div class="glass-panel p-5">
-                        <div class="flex items-center gap-3">
-                            <div class="p-2 rounded-lg bg-green-500/20 text-green-400">
-                                <Bot size={20} />
+                    <div class="hero-actions">
+                        {#if lastLoadedAt}
+                            <div class="meta-pill">
+                                <Calendar size={14} />
+                                <span>Refreshed {formatRefreshedAt(lastLoadedAt)}</span>
                             </div>
-                            <div>
-                                <div class="text-2xl font-bold">{analytics.stats.totalMessages}</div>
-                                <div class="text-xs text-muted-foreground">Total Messages</div>
+                        {/if}
+
+                        <button
+                            class="refresh-button"
+                            onclick={() => loadAnalytics("refresh")}
+                            disabled={isLoading || isRefreshing}
+                        >
+                            <span class:is-spinning={isLoading || isRefreshing}>
+                                <RefreshCw size={15} />
+                            </span>
+                            <span>{isRefreshing ? "Refreshing" : "Refresh"}</span>
+                        </button>
+                    </div>
+                </header>
+
+                {#if error && analytics}
+                    <div class="inline-notice" transition:fade={{ duration: 180 }}>
+                        <div>
+                            <p class="notice-label">Refresh failed</p>
+                            <p class="notice-copy">{error}</p>
+                        </div>
+                        <button class="notice-action" onclick={() => loadAnalytics("refresh")}>
+                            Try again
+                        </button>
+                    </div>
+                {/if}
+
+                {#if isLoading && !analytics}
+                    <div class="content-stack" aria-hidden="true">
+                        <section class="analytics-panel">
+                            <div class="panel-head">
+                                <div class="skeleton-line skeleton-line-short"></div>
+                                <div class="skeleton-line skeleton-line-medium"></div>
                             </div>
+
+                            <div class="stat-grid">
+                                {#each Array.from({ length: 3 }) as _, index}
+                                    <article
+                                        class="stat-card skeleton-card"
+                                        data-skeleton-index={index}
+                                    >
+                                        <div class="skeleton-badge"></div>
+                                        <div class="skeleton-line skeleton-line-short"></div>
+                                        <div class="skeleton-line skeleton-line-value"></div>
+                                        <div class="skeleton-line skeleton-line-medium"></div>
+                                    </article>
+                                {/each}
+                            </div>
+                        </section>
+
+                        <div class="panel-grid">
+                            <section class="analytics-panel">
+                                <div class="panel-head">
+                                    <div class="skeleton-line skeleton-line-short"></div>
+                                    <div class="skeleton-line skeleton-line-medium"></div>
+                                </div>
+
+                                <div class="stack-list">
+                                    {#each Array.from({ length: 4 }) as _, index}
+                                        <div class="skeleton-row" data-skeleton-row={index}>
+                                            <div class="skeleton-line skeleton-line-medium"></div>
+                                            <div class="skeleton-bar">
+                                                <div class="skeleton-bar-fill"></div>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </section>
+
+                            <section class="analytics-panel">
+                                <div class="panel-head">
+                                    <div class="skeleton-line skeleton-line-short"></div>
+                                    <div class="skeleton-line skeleton-line-medium"></div>
+                                </div>
+
+                                <div class="library-card skeleton-card">
+                                    <div class="skeleton-badge"></div>
+                                    <div class="skeleton-line skeleton-line-short"></div>
+                                    <div class="skeleton-line skeleton-line-value"></div>
+                                </div>
+
+                                <div class="stack-list">
+                                    {#each Array.from({ length: 3 }) as _, index}
+                                        <div class="list-row skeleton-row" data-list-row={index}>
+                                            <div class="skeleton-line skeleton-line-medium"></div>
+                                            <div class="skeleton-line skeleton-line-short"></div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </section>
                         </div>
                     </div>
-
-                    <!-- Recent Activity -->
-                    <div class="glass-panel p-5">
-                        <div class="flex items-center gap-3">
-                            <div class="p-2 rounded-lg bg-purple-500/20 text-purple-400">
-                                <TrendingUp size={20} />
-                            </div>
-                            <div>
-                                <div class="text-2xl font-bold">{analytics.stats.recentChatsLast7Days}</div>
-                                <div class="text-xs text-muted-foreground">This Week</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Indicators -->
-                    <div class="glass-panel p-5">
-                        <div class="flex items-center gap-3">
-                            <div class="p-2 rounded-lg bg-orange-500/20 text-orange-400">
-                                <BarChart3 size={20} />
-                            </div>
-                            <div>
-                                <div class="text-2xl font-bold">{analytics.stats.totalIndicators}</div>
-                                <div class="text-xs text-muted-foreground">Indicators Created</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Agent Mode Usage -->
-                <div class="glass-panel p-5 mb-6">
-                    <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
-                        <Bot size={18} class="text-primary" />
-                        Agent Mode Usage
-                    </h2>
-                    
-                    {#if Object.keys(analytics.agentModes).length > 0}
-                        <div class="space-y-3">
-                            {#each Object.entries(analytics.agentModes) as [mode, count]}
-                                {@const total = Object.values(analytics.agentModes).reduce((a: any, b: any) => a + b, 0)}
-                                {@const percentage = Math.round((count / total) * 100)}
+                {:else if error && !analytics}
+                    <section class="state-card" transition:fly={{ y: 14, duration: 220 }}>
+                        <p class="state-kicker">Unavailable</p>
+                        <h2 class="state-title">Analytics could not be loaded</h2>
+                        <p class="state-copy">{error}</p>
+                        <button class="refresh-button" onclick={() => loadAnalytics("initial")}>
+                            <RefreshCw size={15} />
+                            <span>Retry</span>
+                        </button>
+                    </section>
+                {:else if analytics}
+                    <div class="content-stack" transition:fade={{ duration: 180 }}>
+                        <section class="analytics-panel">
+                            <div class="panel-head">
                                 <div>
-                                    <div class="flex items-center justify-between mb-1">
-                                        <span class="text-sm">{getModeLabel(mode)}</span>
-                                        <span class="text-sm text-muted-foreground">{count} ({percentage}%)</span>
+                                    <p class="panel-eyebrow">Personal usage</p>
+                                    <h2 class="panel-title">Your conversation footprint</h2>
+                                </div>
+                                <p class="panel-caption">Scoped to your chats and prompts</p>
+                            </div>
+
+                            <div class="stat-grid">
+                                <article class="stat-card">
+                                    <div class="stat-icon">
+                                        <MessageSquare size={18} />
                                     </div>
-                                    <div class="h-2 bg-secondary rounded-full overflow-hidden">
-                                        <div 
-                                            class="h-full {getModeColor(mode)} transition-all duration-500"
-                                            style="width: {percentage}%"
-                                        ></div>
+                                    <p class="stat-label">Conversations</p>
+                                    <p class="stat-value">{formatNumber(analytics.stats.totalChats)}</p>
+                                    <p class="stat-meta">All chats tied to this workspace identity</p>
+                                </article>
+
+                                <article class="stat-card">
+                                    <div class="stat-icon">
+                                        <Send size={18} />
+                                    </div>
+                                    <p class="stat-label">Prompts</p>
+                                    <p class="stat-value">{formatNumber(analytics.stats.totalMessages)}</p>
+                                    <p class="stat-meta">Your user messages across every conversation</p>
+                                </article>
+
+                                <article class="stat-card">
+                                    <div class="stat-icon">
+                                        <Activity size={18} />
+                                    </div>
+                                    <p class="stat-label">Active chats</p>
+                                    <p class="stat-value">
+                                        {formatNumber(analytics.stats.recentChatsLast7Days)}
+                                    </p>
+                                    <p class="stat-meta">Chats with prompts during the last 7 days</p>
+                                </article>
+                            </div>
+                        </section>
+
+                        <div class="panel-grid">
+                            <section class="analytics-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="panel-eyebrow">Mode mix</p>
+                                        <h2 class="panel-title">Where your prompts go</h2>
+                                    </div>
+                                    <p class="panel-caption">Share of total prompts by assistant mode</p>
+                                </div>
+
+                                {#if modeRows.length > 0}
+                                    <div class="stack-list">
+                                        {#each modeRows as row}
+                                            <div class="mode-row">
+                                                <div class="mode-copy">
+                                                    <span
+                                                        class="mode-dot"
+                                                        style="background-color: {row.accent}; --mode-accent: {row.accent};"
+                                                    ></span>
+                                                    <div>
+                                                        <p class="mode-name">{row.label}</p>
+                                                        <p class="mode-meta">
+                                                            {formatNumber(row.count)} prompt{row.count === 1
+                                                                ? ""
+                                                                : "s"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div class="mode-meter">
+                                                    <div class="mode-track">
+                                                        <div
+                                                            class="mode-fill"
+                                                            style="width: {row.percentage}%; --mode-accent: {row.accent};"
+                                                        ></div>
+                                                    </div>
+                                                    <span class="mode-percentage">{row.percentage}%</span>
+                                                </div>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {:else}
+                                    <div class="empty-card">
+                                        <p class="empty-title">No prompt activity yet</p>
+                                        <p class="empty-copy">
+                                            Once you start using assistant modes, their share of your prompt
+                                            flow will appear here.
+                                        </p>
+                                    </div>
+                                {/if}
+                            </section>
+
+                            <section class="analytics-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="panel-eyebrow">Indicator library</p>
+                                        <h2 class="panel-title">Shared library snapshot</h2>
+                                    </div>
+                                    <span class="scope-pill">Library-wide</span>
+                                </div>
+
+                                <p class="section-note">
+                                    These totals are shared across all users until indicators have explicit
+                                    ownership in the schema.
+                                </p>
+
+                                <div class="library-card">
+                                    <div class="stat-icon">
+                                        <BarChart3 size={18} />
+                                    </div>
+                                    <div>
+                                        <p class="stat-label">Indicators available</p>
+                                        <p class="stat-value compact">
+                                            {formatNumber(analytics.stats.totalIndicators)}
+                                        </p>
                                     </div>
                                 </div>
-                            {/each}
-                        </div>
-                    {:else}
-                        <div class="text-muted-foreground text-sm text-center py-4">
-                            No agent mode data yet
-                        </div>
-                    {/if}
-                </div>
 
-                <!-- Recent Indicators -->
-                <div class="glass-panel p-5">
-                    <h2 class="text-base font-semibold mb-4 flex items-center gap-2">
-                        <BarChart3 size={18} class="text-primary" />
-                        Recent Indicators
-                    </h2>
-                    
-                    {#if analytics.recentIndicators.length > 0}
-                        <div class="space-y-2">
-                            {#each analytics.recentIndicators as indicator}
-                                <div class="flex items-center justify-between py-2 px-3 bg-secondary/30 rounded-lg">
-                                    <span class="text-sm">{indicator.name}</span>
-                                    <span class="text-xs text-muted-foreground">
-                                        {formatDate(indicator.created_at)}
-                                    </span>
-                                </div>
-                            {/each}
+                                {#if analytics.recentIndicators.length > 0}
+                                    <div class="stack-list">
+                                        {#each analytics.recentIndicators as indicator}
+                                            <div class="list-row">
+                                                <div class="indicator-copy">
+                                                    <p class="indicator-name">{indicator.name}</p>
+                                                    <p class="indicator-meta">Latest additions to the shared library</p>
+                                                </div>
+                                                <span class="indicator-date">
+                                                    {formatDate(indicator.created_at)}
+                                                </span>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {:else}
+                                    <div class="empty-card">
+                                        <div class="empty-icon">
+                                            <Globe size={18} />
+                                        </div>
+                                        <p class="empty-title">No library entries yet</p>
+                                        <p class="empty-copy">
+                                            When indicators are created, the newest additions will appear here
+                                            with shared-library labeling.
+                                        </p>
+                                    </div>
+                                {/if}
+                            </section>
                         </div>
-                    {:else}
-                        <div class="text-muted-foreground text-sm text-center py-4">
-                            No indicators created yet
-                        </div>
-                    {/if}
-                </div>
-
-                <!-- Period Info -->
-                <div class="mt-6 text-center text-xs text-muted-foreground">
-                    <Calendar size={12} class="inline mr-1" />
-                    Showing analytics for {analytics.period.replace('_', ' ')}
-                </div>
-            {/if}
+                    </div>
+                {/if}
+            </div>
         </div>
     </main>
 </div>
+
+<style>
+    .analytics-main {
+        position: relative;
+        background:
+            radial-gradient(circle at top, rgba(214, 181, 123, 0.14), transparent 30%),
+            radial-gradient(circle at 85% 15%, rgba(244, 238, 220, 0.08), transparent 24%),
+            linear-gradient(180deg, #0d0c0a 0%, #060606 100%);
+    }
+
+    .analytics-main::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(135deg, rgba(214, 181, 123, 0.08), transparent 40%),
+            linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.02));
+    }
+
+    .analytics-scroll {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .analytics-container {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 3.5rem 2rem 4rem;
+    }
+
+    .analytics-hero,
+    .panel-head,
+    .mode-row,
+    .list-row,
+    .library-card,
+    .inline-notice,
+    .state-card,
+    .empty-card {
+        border: 1px solid rgba(214, 181, 123, 0.16);
+    }
+
+    .analytics-hero {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1.5rem;
+        padding: 0 0 2rem;
+        margin-bottom: 1.75rem;
+        border-width: 0 0 1px;
+    }
+
+    .hero-copy {
+        max-width: 42rem;
+    }
+
+    .hero-eyebrow,
+    .panel-eyebrow,
+    .stat-label,
+    .notice-label,
+    .state-kicker {
+        margin: 0;
+        color: rgba(227, 207, 165, 0.72);
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.72rem;
+    }
+
+    .hero-title,
+    .panel-title,
+    .state-title {
+        margin: 0.35rem 0 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        color: rgba(255, 250, 239, 0.96);
+    }
+
+    .hero-title {
+        font-size: clamp(2.5rem, 5vw, 4.1rem);
+        line-height: 0.96;
+    }
+
+    .panel-title,
+    .state-title {
+        font-size: clamp(1.55rem, 2vw, 2rem);
+        line-height: 1.04;
+    }
+
+    .hero-description,
+    .panel-caption,
+    .stat-meta,
+    .mode-meta,
+    .indicator-meta,
+    .empty-copy,
+    .notice-copy,
+    .state-copy,
+    .section-note {
+        margin: 0;
+        color: rgba(245, 239, 228, 0.62);
+        line-height: 1.55;
+    }
+
+    .hero-description {
+        margin-top: 1rem;
+        max-width: 34rem;
+        font-size: 0.98rem;
+    }
+
+    .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .meta-pill,
+    .refresh-button,
+    .notice-action,
+    .scope-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+    }
+
+    .meta-pill,
+    .scope-pill {
+        padding: 0.8rem 1rem;
+        color: rgba(249, 244, 236, 0.72);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .refresh-button,
+    .notice-action {
+        padding: 0.82rem 1.1rem;
+        background: linear-gradient(180deg, rgba(214, 181, 123, 0.18), rgba(214, 181, 123, 0.1));
+        color: rgba(255, 247, 232, 0.95);
+        border: 1px solid rgba(214, 181, 123, 0.24);
+        cursor: pointer;
+        transition:
+            background-color 160ms ease,
+            border-color 160ms ease,
+            transform 160ms ease;
+    }
+
+    .refresh-button:hover,
+    .notice-action:hover {
+        background: linear-gradient(180deg, rgba(214, 181, 123, 0.24), rgba(214, 181, 123, 0.14));
+        border-color: rgba(214, 181, 123, 0.34);
+        transform: translateY(-1px);
+    }
+
+    .refresh-button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .is-spinning {
+        animation: analytics-spin 0.9s linear infinite;
+    }
+
+    .inline-notice,
+    .state-card,
+    .analytics-panel,
+    .stat-card,
+    .mode-row,
+    .list-row,
+    .library-card,
+    .empty-card {
+        background: rgba(12, 11, 9, 0.8);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    .inline-notice {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-radius: 1.25rem;
+        padding: 1rem 1.15rem;
+        margin-bottom: 1.4rem;
+    }
+
+    .content-stack {
+        display: grid;
+        gap: 1.4rem;
+    }
+
+    .analytics-panel {
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+    }
+
+    .panel-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0 0 1.2rem;
+        margin-bottom: 1.35rem;
+        border-width: 0 0 1px;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .panel-caption {
+        max-width: 16rem;
+        text-align: right;
+        font-size: 0.9rem;
+    }
+
+    .stat-grid,
+    .panel-grid {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .stat-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .panel-grid {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    }
+
+    .stat-card,
+    .library-card,
+    .empty-card,
+    .state-card {
+        border-radius: 1.25rem;
+        padding: 1.25rem;
+    }
+
+    .stat-card {
+        min-height: 13rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .stat-icon,
+    .empty-icon,
+    .skeleton-badge {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 245, 223, 0.82);
+        background: linear-gradient(180deg, rgba(214, 181, 123, 0.22), rgba(214, 181, 123, 0.08));
+        border: 1px solid rgba(214, 181, 123, 0.18);
+    }
+
+    .stat-value {
+        margin: 0;
+        font-size: clamp(2.2rem, 4vw, 3rem);
+        line-height: 0.95;
+        color: rgba(255, 250, 242, 0.98);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.05em;
+    }
+
+    .stat-value.compact {
+        font-size: clamp(1.9rem, 3vw, 2.5rem);
+    }
+
+    .stack-list {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .mode-row,
+    .list-row {
+        border-radius: 1.15rem;
+        padding: 0.95rem 1rem;
+    }
+
+    .mode-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .mode-copy,
+    .indicator-copy {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        min-width: 0;
+    }
+
+    .mode-dot {
+        width: 0.68rem;
+        height: 0.68rem;
+        border-radius: 999px;
+        flex-shrink: 0;
+        box-shadow: 0 0 14px color-mix(in srgb, var(--mode-accent, #d6b57b) 70%, transparent);
+    }
+
+    .mode-name,
+    .indicator-name,
+    .empty-title {
+        margin: 0;
+        color: rgba(255, 249, 238, 0.94);
+        font-size: 0.98rem;
+    }
+
+    .mode-meter {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        min-width: min(46%, 16rem);
+    }
+
+    .mode-track,
+    .skeleton-bar {
+        flex: 1;
+        height: 0.48rem;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .mode-fill,
+    .skeleton-bar-fill {
+        height: 100%;
+        border-radius: inherit;
+    }
+
+    .mode-fill {
+        background: linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--mode-accent, #d6b57b) 35%, transparent),
+            var(--mode-accent, #d6b57b)
+        );
+    }
+
+    .mode-percentage,
+    .indicator-date {
+        flex-shrink: 0;
+        font-size: 0.85rem;
+        color: rgba(245, 239, 228, 0.72);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .section-note {
+        margin-bottom: 1rem;
+        font-size: 0.92rem;
+    }
+
+    .library-card {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .scope-pill {
+        color: rgba(255, 244, 220, 0.86);
+        border: 1px solid rgba(214, 181, 123, 0.18);
+    }
+
+    .state-card,
+    .empty-card {
+        display: grid;
+        gap: 0.8rem;
+    }
+
+    .state-card {
+        max-width: 34rem;
+    }
+
+    .skeleton-line,
+    .skeleton-bar-fill {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(214, 181, 123, 0.18));
+    }
+
+    .skeleton-line {
+        height: 0.72rem;
+        border-radius: 999px;
+    }
+
+    .skeleton-line-short {
+        width: 7rem;
+    }
+
+    .skeleton-line-medium {
+        width: 12rem;
+    }
+
+    .skeleton-line-value {
+        width: 5.5rem;
+        height: 2.1rem;
+    }
+
+    .skeleton-card {
+        pointer-events: none;
+    }
+
+    .skeleton-row {
+        display: grid;
+        gap: 0.85rem;
+    }
+
+    .empty-icon {
+        color: rgba(255, 245, 223, 0.72);
+    }
+
+    @keyframes analytics-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @media (max-width: 960px) {
+        .analytics-container {
+            padding: 2rem 1.25rem 3rem;
+        }
+
+        .analytics-hero,
+        .panel-head,
+        .mode-row,
+        .inline-notice {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .hero-actions,
+        .mode-meter {
+            width: 100%;
+        }
+
+        .hero-actions {
+            justify-content: flex-start;
+        }
+
+        .panel-caption {
+            max-width: none;
+            text-align: left;
+        }
+
+        .stat-grid,
+        .panel-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .mode-meter {
+            min-width: 0;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .analytics-container {
+            padding-inline: 1rem;
+        }
+
+        .analytics-panel,
+        .state-card {
+            padding: 1.1rem;
+        }
+
+        .stat-card {
+            min-height: auto;
+        }
+
+        .list-row {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+    }
+</style>
