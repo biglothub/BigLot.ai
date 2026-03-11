@@ -10,6 +10,7 @@ type TavilyResult = {
 	title: string;
 	url: string;
 	content: string;
+	raw_content?: string;
 	score: number;
 	published_date?: string;
 };
@@ -40,6 +41,20 @@ registerTool({
 			max_results: {
 				type: 'number',
 				description: 'Maximum number of results to return (default: 5, max: 10)'
+			},
+			search_depth: {
+				type: 'string',
+				enum: ['basic', 'advanced'],
+				description: 'Search depth: "basic" (1 credit) or "advanced" for higher relevance with multiple semantic snippets per URL (2 credits). Use "advanced" for deep research. (default: basic)'
+			},
+			time_range: {
+				type: 'string',
+				enum: ['d', 'w', 'm', 'y'],
+				description: 'Filter results by recency: "d" (past day), "w" (past week), "m" (past month), "y" (past year). Useful for finding recent news/events.'
+			},
+			include_raw_content: {
+				type: 'boolean',
+				description: 'If true, returns full article content in markdown format (not just snippets). Use for deep research when you need complete article text. (default: false)'
 			}
 		},
 		required: ['query']
@@ -49,6 +64,9 @@ registerTool({
 		const query = String(args.query || '').trim();
 		const searchType = String(args.search_type || 'general');
 		const maxResults = Math.min(Math.max(Number(args.max_results) || 5, 1), 10);
+		const searchDepth = args.search_depth === 'advanced' ? 'advanced' : 'basic';
+		const timeRange = ['d', 'w', 'm', 'y'].includes(String(args.time_range)) ? String(args.time_range) : undefined;
+		const includeRawContent = Boolean(args.include_raw_content);
 
 		if (!query) {
 			return {
@@ -67,7 +85,7 @@ registerTool({
 			};
 		}
 
-		const cacheKey = toolCache.generateKey('web_search', { query, searchType, maxResults });
+		const cacheKey = toolCache.generateKey('web_search', { query, searchType, maxResults, searchDepth, timeRange, includeRawContent });
 		const cached = toolCache.get<ToolResult>(cacheKey);
 		if (cached) return cached;
 
@@ -80,11 +98,12 @@ registerTool({
 				body: JSON.stringify({
 					api_key: apiKey,
 					query,
-					search_depth: 'basic',
+					search_depth: searchDepth,
 					topic: searchType === 'news' ? 'news' : 'general',
 					max_results: maxResults,
-					include_answer: true,
-					include_raw_content: false
+					include_answer: searchDepth === 'advanced' ? 'advanced' : true,
+					include_raw_content: includeRawContent ? 'markdown' : false,
+					...(timeRange ? { time_range: timeRange } : {})
 				})
 			});
 
@@ -195,7 +214,12 @@ function buildTextSummary(query: string, results: TavilyResult[], answer?: strin
 
 	lines.push(`Found ${results.length} results:`);
 	for (const r of results) {
-		lines.push(`- ${r.title} (${extractDomain(r.url)}): ${truncate(r.content, 200)}`);
+		if (r.raw_content) {
+			lines.push(`\n--- ${r.title} (${extractDomain(r.url)}) ---`);
+			lines.push(truncate(r.raw_content, 2000));
+		} else {
+			lines.push(`- ${r.title} (${extractDomain(r.url)}): ${truncate(r.content, 200)}`);
+		}
 	}
 
 	return lines.join('\n');

@@ -14,6 +14,20 @@ describe('classifyChatRoute', () => {
 		expect(classifyChatRoute({ ...base, chatMode: 'discussion', lastUserMessage: 'gold price' })).toBe('direct_answer');
 	});
 
+	// --- Research mode (always deep_research) ---
+
+	it('returns deep_research for research chat mode', () => {
+		expect(classifyChatRoute({ ...base, chatMode: 'research', lastUserMessage: 'tell me about gold' })).toBe('deep_research');
+	});
+
+	it('returns deep_research for research mode even without research keywords', () => {
+		expect(classifyChatRoute({ ...base, chatMode: 'research', lastUserMessage: 'hello' })).toBe('deep_research');
+	});
+
+	it('returns deep_research for research mode with image input', () => {
+		expect(classifyChatRoute({ ...base, chatMode: 'research', hasImageInput: true, lastUserMessage: 'analyze' })).toBe('deep_research');
+	});
+
 	it('returns direct_answer when image input is present', () => {
 		expect(classifyChatRoute({ ...base, hasImageInput: true, lastUserMessage: 'what is this chart' })).toBe('direct_answer');
 	});
@@ -200,5 +214,13 @@ describe('shouldEnablePlanning', () => {
 
 	it('returns false for discussion mode', () => {
 		expect(shouldEnablePlanning('discussion', 'plan_then_execute')).toBe(false);
+	});
+
+	it('returns true for research + deep_research', () => {
+		expect(shouldEnablePlanning('research', 'deep_research')).toBe(true);
+	});
+
+	it('returns false for research + direct_answer', () => {
+		expect(shouldEnablePlanning('research', 'direct_answer')).toBe(false);
 	});
 });

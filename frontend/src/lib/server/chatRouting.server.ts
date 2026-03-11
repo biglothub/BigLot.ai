@@ -1,7 +1,7 @@
 import type { AgentMode } from '$lib/agent/systemPrompts';
 import type { AgentRouteType } from '$lib/types/contentBlock';
 
-type ChatMode = 'normal' | 'agent' | 'discussion';
+type ChatMode = 'normal' | 'agent' | 'discussion' | 'research';
 
 type RouteInput = {
 	chatMode: ChatMode;
@@ -74,6 +74,7 @@ function signalMatches(text: string, signal: string): boolean {
 }
 
 export function classifyChatRoute(input: RouteInput): AgentRouteType {
+	if (input.chatMode === 'research') return 'deep_research';
 	if (input.chatMode !== 'agent') return 'direct_answer';
 	if (input.hasImageInput) return 'direct_answer';
 
@@ -101,5 +102,5 @@ export function classifyChatRoute(input: RouteInput): AgentRouteType {
 }
 
 export function shouldEnablePlanning(chatMode: ChatMode, routeType: AgentRouteType): boolean {
-	return chatMode === 'agent' && (routeType === 'plan_then_execute' || routeType === 'deep_research');
+	return (chatMode === 'agent' || chatMode === 'research') && (routeType === 'plan_then_execute' || routeType === 'deep_research');
 }

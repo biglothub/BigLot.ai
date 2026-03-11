@@ -5,7 +5,7 @@ import type {
 	ChatCompletionChunk
 } from 'openai/resources/chat/completions';
 import type { ContentBlock, PlanBlock, PlanStep, PlanStepStatus, SourcesBlock } from '$lib/types/contentBlock';
-import { getOpenAIToolSchemas, executeTool, getTool, type ToolResult, type DataSource } from './tools/registry';
+import { getOpenAIToolSchemas, getFilteredToolSchemas, executeTool, getTool, type ToolResult, type DataSource } from './tools/registry';
 
 // Import tools to register them
 import './tools/marketData.tool';
@@ -16,6 +16,8 @@ import './tools/macro.tool';
 import './tools/cot.tool';
 import './tools/crossAsset.tool';
 import './tools/webSearch.tool';
+import './tools/webExtract.tool';
+import './tools/webCrawl.tool';
 import './tools/memory.tool';
 import './tools/handoff.tool';
 import { getSystemPrompt, normalizeAgentMode, type AgentMode } from '$lib/agent/systemPrompts';
@@ -45,6 +47,7 @@ export type AgentLoopConfig = {
 	maxPlanSteps?: number;
 	planningEnabled?: boolean;
 	currentMode?: AgentMode;
+	allowedTools?: string[];
 	callbacks: AgentCallbacks;
 };
 
@@ -333,12 +336,12 @@ function applyHandoff(
  * Main agent loop with Manus-like planning support.
  */
 export async function runAgentLoop(config: AgentLoopConfig): Promise<ContentBlock[]> {
-	const { client, apiModel, callbacks, maxIterations = 5, maxPlanSteps = 6, planningEnabled = false } = config;
+	const { client, apiModel, callbacks, maxIterations = 5, maxPlanSteps = 6, planningEnabled = false, allowedTools } = config;
 	let currentMode = config.currentMode ?? 'coach';
 	const messages = [...config.messages];
 	const allContentBlocks: ContentBlock[] = [];
 	const collectedSources: DataSource[] = [];
-	const tools = getOpenAIToolSchemas();
+	const tools = allowedTools ? getFilteredToolSchemas(allowedTools) : getOpenAIToolSchemas();
 
 	// Phase 1: Initial LLM call (may produce a plan or direct response)
 	const { fullText, toolCalls, finishReason } = await streamLLMCall(

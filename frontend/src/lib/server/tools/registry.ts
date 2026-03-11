@@ -48,6 +48,21 @@ export function getOpenAIToolSchemas(): ChatCompletionTool[] {
 	}));
 }
 
+export function getFilteredToolSchemas(toolNames: string[]): ChatCompletionTool[] {
+	const nameSet = new Set(toolNames);
+	nameSet.add('create_plan'); // always allow planning
+	return getAllTools()
+		.filter((tool) => nameSet.has(tool.name))
+		.map((tool) => ({
+			type: 'function' as const,
+			function: {
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters
+			}
+		}));
+}
+
 export async function executeTool(
 	name: string,
 	args: Record<string, unknown>

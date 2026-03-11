@@ -255,7 +255,7 @@ export type SSERunStart = {
 	runId: string | null;
 	routeType: AgentRouteType;
 	mode: string;
-	chatMode: 'normal' | 'agent' | 'discussion';
+	chatMode: 'normal' | 'agent' | 'discussion' | 'research';
 	model: string;
 };
 

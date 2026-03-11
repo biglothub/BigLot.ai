@@ -3,11 +3,44 @@
     import ChatArea from "$lib/components/ChatArea.svelte";
     import InputArea from "$lib/components/InputArea.svelte";
     import { chatState, type AgentMode } from "$lib/state/chat.svelte";
+    import { botState } from "$lib/state/bots.svelte";
     import AgentOrb from "$lib/components/AgentOrb.svelte";
     import WatchlistBar from "$lib/components/WatchlistBar.svelte";
     import { fade } from "svelte/transition";
+    import { Sparkles } from "lucide-svelte";
 
     let sidebarOpen = $state(true);
+    let autoDetectedMode = $state<AgentMode | null>(null);
+    let autoDetectTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    // Compute the current select value (agent mode or custom bot)
+    const modeSelectValue = $derived(
+        botState.activeBotId ? `custom:${botState.activeBotId}` : chatState.agentMode
+    );
+
+    function handleModeChange(e: Event) {
+        const value = (e.target as HTMLSelectElement).value;
+        if (value.startsWith('custom:')) {
+            const botId = value.slice(7);
+            botState.selectBot(botId);
+        } else {
+            botState.selectBot(null);
+            chatState.setAgentMode(value as AgentMode);
+        }
+    }
+
+    // Watch for mode changes triggered by auto-detect (flash indicator briefly)
+    $effect(() => {
+        const _mode = chatState.agentMode;
+        // Show "auto" badge briefly when loading starts (mode was just auto-set)
+        if (chatState.isLoading && !autoDetectedMode) {
+            autoDetectedMode = _mode;
+            clearTimeout(autoDetectTimeout);
+            autoDetectTimeout = setTimeout(() => {
+                autoDetectedMode = null;
+            }, 2500);
+        }
+    });
 </script>
 
 <div
@@ -32,12 +65,8 @@
                 </div>
                 <select
                     class="text-xs bg-secondary/80 border border-white/10 rounded-full px-3 py-1.5 text-foreground/85 focus:outline-none focus:ring-0 focus:border-white/20 max-w-[16rem]"
-                    value={chatState.agentMode}
-                    onchange={(e) =>
-                        chatState.setAgentMode(
-                            (e.target as HTMLSelectElement)
-                                .value as AgentMode
-                        )}
+                    value={modeSelectValue}
+                    onchange={handleModeChange}
                     title="Assistant mode"
                 >
                     <optgroup label="General">
@@ -51,8 +80,24 @@
                         <option value="macro">Macro Analyst</option>
                         <option value="portfolio">Portfolio Manager</option>
                     </optgroup>
+                    {#if botState.bots.length > 0}
+                        <optgroup label="My Bots">
+                            {#each botState.bots as bot}
+                                <option value="custom:{bot.id}">{bot.avatar} {bot.name}</option>
+                            {/each}
+                        </optgroup>
+                    {/if}
                 </select>
 
+                {#if autoDetectedMode}
+                    <span
+                        class="inline-flex items-center gap-1 text-[10px] text-primary/80 font-medium animate-pulse"
+                        transition:fade={{ duration: 200 }}
+                    >
+                        <Sparkles size={10} />
+                        auto
+                    </span>
+                {/if}
             </div>
 
             <div class="flex items-center gap-2">

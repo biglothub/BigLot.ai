@@ -11,6 +11,8 @@ vi.mock('./tools/macro.tool', () => ({}));
 vi.mock('./tools/cot.tool', () => ({}));
 vi.mock('./tools/crossAsset.tool', () => ({}));
 vi.mock('./tools/webSearch.tool', () => ({}));
+vi.mock('./tools/webExtract.tool', () => ({}));
+vi.mock('./tools/webCrawl.tool', () => ({}));
 vi.mock('./tools/memory.tool', () => ({}));
 vi.mock('./tools/handoff.tool', () => ({}));
 

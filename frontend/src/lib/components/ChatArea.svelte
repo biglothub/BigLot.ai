@@ -158,10 +158,16 @@
                                 {:else if sourcesBlock}
                                     <SourcesBlock sources={sourcesBlock.sources} />
                                 {/if}
-                                {#if message.toolCalls?.some((t) => t.status === "running")}
+                                {#if message.toolCalls?.length}
                                     <ToolProgress tools={message.toolCalls} />
                                 {/if}
                             {:else}
+                                {#if message.file_name}
+                                    <div class="flex items-center gap-1.5 text-xs text-muted-foreground/70 mb-1.5 px-1">
+                                        <span>📄</span>
+                                        <span class="truncate max-w-[220px]" title={message.file_name}>{message.file_name}</span>
+                                    </div>
+                                {/if}
                                 <div class="whitespace-pre-wrap break-words">
                                     {message.content}
                                 </div>

@@ -12,14 +12,27 @@
         Loader2,
         Link2,
         Unlink2,
-        BarChart
+        BarChart,
+        Sparkles,
+        Search
     } from "lucide-svelte";
     import { chatState } from "$lib/state/chat.svelte";
+    import { botState } from "$lib/state/bots.svelte";
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
 
     let { isOpen = $bindable(true) } = $props();
+
+    let searchQuery = $state('');
+
+    const filteredChats = $derived(
+        searchQuery.trim() === ''
+            ? chatState.allChats
+            : chatState.allChats.filter(chat =>
+                chat.title.toLowerCase().includes(searchQuery.toLowerCase())
+              )
+    );
 
     function toggleSidebar() {
         isOpen = !isOpen;
@@ -71,6 +84,7 @@
     onMount(() => {
         void chatState.loadAllChats();
         void chatState.refreshTelegramLinkStatus();
+        void botState.loadBots(chatState.biglotUserId);
     });
 </script>
 
@@ -104,102 +118,100 @@
         </button>
     </div>
 
-    <!-- New Chat Button -->
-    <div class="p-3 space-y-1.5">
+    <!-- Nav -->
+    <div class="p-3 space-y-0.5">
         <button
             onclick={handleNewChatClick}
-            class="w-full flex items-center gap-2 px-4 py-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-all duration-200 group"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-primary hover:bg-primary/10 rounded-md transition-colors group"
         >
             <Plus
-                size={18}
+                size={16}
                 class="group-hover:rotate-90 transition-transform duration-200"
             />
-            <span class="font-semibold text-sm">New Chat</span>
+            <span class="font-medium">New Chat</span>
         </button>
 
         <a
             href="/indicators"
-            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500/10 to-primary/10 hover:from-purple-500/20 hover:to-primary/20 text-foreground/80 hover:text-primary border border-white/5 hover:border-primary/20 rounded-lg transition-all duration-200 group"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground rounded-md transition-colors"
         >
-            <Bot
-                size={18}
-                class="text-purple-400 group-hover:text-primary transition-colors"
-            />
-            <span class="font-semibold text-sm">Indicator Builder</span>
+            <Bot size={16} class="text-muted-foreground" />
+            <span>Indicator Builder</span>
             <span
-                class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary font-bold"
+                class="ml-auto text-[10px] text-primary/70 font-medium"
                 >AI</span
             >
         </a>
 
         <a
             href="/dashboard"
-            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500/10 to-yellow-500/10 hover:from-amber-500/20 hover:to-yellow-500/20 text-foreground/80 hover:text-amber-300 border border-white/5 hover:border-amber-500/20 rounded-lg transition-all duration-200 group"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground rounded-md transition-colors"
         >
-            <BarChart3
-                size={18}
-                class="text-amber-400 group-hover:text-amber-300 transition-colors"
-            />
-            <span class="font-semibold text-sm">Gold Dashboard</span>
+            <BarChart3 size={16} class="text-muted-foreground" />
+            <span>Gold Dashboard</span>
             <span
-                class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400 font-bold"
-                >LIVE</span
-            >
+                class="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400"
+            ></span>
         </a>
 
         <a
             href="/analytics"
-            class="w-full flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500/10 to-purple-500/10 hover:from-blue-500/20 hover:to-purple-500/20 text-foreground/80 hover:text-blue-300 border border-white/5 hover:border-blue-500/20 rounded-lg transition-all duration-200 group"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground rounded-md transition-colors"
         >
-            <BarChart
-                size={18}
-                class="text-blue-400 group-hover:text-blue-300 transition-colors"
-            />
-            <span class="font-semibold text-sm">Analytics</span>
+            <BarChart size={16} class="text-muted-foreground" />
+            <span>Analytics</span>
+        </a>
+
+        <a
+            href="/bots"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground rounded-md transition-colors"
+        >
+            <Sparkles size={16} class="text-muted-foreground" />
+            <span>My Bots</span>
+            {#if botState.bots.length > 0}
+                <span class="ml-auto text-[10px] text-primary/70 font-medium">{botState.bots.length}</span>
+            {:else}
+                <span class="ml-auto text-[10px] text-primary/70 font-medium">NEW</span>
+            {/if}
         </a>
 
         <button
             onclick={handleAddTelegramClick}
             disabled={chatState.isTelegramLinkLoading}
-            class="w-full flex items-center gap-2 px-4 py-3 bg-sky-500/10 hover:bg-sky-500/20 text-foreground/80 hover:text-sky-300 border border-sky-400/20 rounded-lg transition-all duration-200 disabled:opacity-60"
+            class="w-full flex items-center gap-3 px-3 py-2 text-sm text-foreground/70 hover:bg-white/5 hover:text-foreground rounded-md transition-colors disabled:opacity-50"
         >
-            <Link2 size={18} />
-            <span class="font-semibold text-sm">
+            <Link2 size={16} class="text-muted-foreground" />
+            <span>
                 {chatState.telegramLinkStatus.linked
-                    ? "Reconnect Telegram Bot"
+                    ? "Reconnect Telegram"
                     : "Add Telegram Bot"}
             </span>
             {#if chatState.isTelegramLinkLoading}
-                <Loader2 size={14} class="ml-auto animate-spin" />
+                <Loader2 size={14} class="ml-auto animate-spin text-muted-foreground" />
             {:else if chatState.telegramLinkStatus.linked}
                 <span
-                    class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 font-bold"
-                    >Linked</span
-                >
+                    class="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400"
+                ></span>
             {/if}
         </button>
 
         {#if chatState.telegramLinkStatus.linked}
-            <div
-                class="px-3 py-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5"
-            >
-                <div class="text-[11px] text-muted-foreground">Connected</div>
-                <div class="text-xs font-medium truncate">
+            <div class="flex items-center gap-2 px-3 py-1.5 ml-7">
+                <span class="text-[11px] text-muted-foreground truncate">
                     {chatState.telegramLinkStatus.displayName ?? "Telegram user"}
-                </div>
+                </span>
                 <button
                     onclick={handleUnlinkTelegramClick}
                     disabled={chatState.isTelegramLinkLoading}
-                    class="mt-2 w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-red-400/20 text-red-300 hover:bg-red-500/10 transition-colors"
+                    class="text-[11px] text-red-400/60 hover:text-red-400 transition-colors"
                 >
-                    <Unlink2 size={12} />
-                    <span>Unlink</span>
+                    Unlink
                 </button>
             </div>
         {/if}
 
         {#if chatState.telegramError}
-            <div class="px-2 text-[11px] text-red-300/90">
+            <div class="px-3 ml-7 text-[11px] text-red-400/80">
                 {chatState.telegramError}
             </div>
         {/if}
@@ -216,7 +228,24 @@
                 History
             </div>
 
-            {#each chatState.allChats as chat}
+            <!-- Search Input -->
+            <div class="relative mb-1">
+                <Search size={13} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <input
+                    type="text"
+                    placeholder="ค้นหาแชท..."
+                    bind:value={searchQuery}
+                    class="w-full bg-white/5 border border-border/50 rounded-md pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+                />
+            </div>
+
+            {#if filteredChats.length === 0}
+                <div class="px-4 py-4 text-center text-xs text-muted-foreground">
+                    ไม่พบแชท "{searchQuery}"
+                </div>
+            {/if}
+
+            {#each filteredChats as chat}
                 <div
                     onclick={() => handleChatHistoryClick(chat.id)}
                     class="w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-md transition-colors text-left group relative pr-8 cursor-pointer

@@ -7,10 +7,17 @@ import type {
     PlanBlock,
     DiscussionBlock
 } from '$lib/types/contentBlock';
+import { botState } from './bots.svelte';
 
 export type AgentMode = 'coach' | 'recovery' | 'analyst' | 'pinescript' | 'gold' | 'macro' | 'portfolio';
-export type ChatMode = 'normal' | 'agent' | 'discussion';
+export type ChatMode = 'normal' | 'agent' | 'discussion' | 'research';
 export type ChatChannel = 'web' | 'telegram';
+
+export type FileAttachment = {
+    name: string;
+    content: string;
+    mimeType: string;
+};
 
 export type Message = {
     id?: string;
@@ -19,6 +26,7 @@ export type Message = {
     contentBlocks?: ContentBlock[];
     toolCalls?: ToolCallStatus[];
     image_url?: string;
+    file_name?: string;
     mode?: AgentMode;
     channel?: ChatChannel;
     runId?: string | null;
@@ -46,8 +54,67 @@ type LinkTokenResponse = {
 type JsonObject = Record<string, unknown>;
 
 const AGENT_MODES: AgentMode[] = ['coach', 'recovery', 'analyst', 'pinescript', 'gold', 'macro', 'portfolio'];
-const CHAT_MODES: ChatMode[] = ['normal', 'agent', 'discussion'];
+const CHAT_MODES: ChatMode[] = ['normal', 'agent', 'discussion', 'research'];
 const CHAT_CHANNELS: ChatChannel[] = ['web', 'telegram'];
+
+// ── Auto-detect AgentMode from prompt keywords ─────────────────────
+// Order matters: more-specific modes checked first to avoid false positives.
+const MODE_SIGNALS: [AgentMode, string[]][] = [
+    ['gold', [
+        'ทอง', 'ทองคำ', 'xau', 'xauusd', 'gold', 'gc=f', 'ราคาทอง',
+        'ทองขึ้น', 'ทองลง', 'gold spot', 'gold price', 'ทองวันนี้',
+        'ออมทอง', 'ทองแท่ง', 'ทองรูปพรรณ'
+    ]],
+    ['pinescript', [
+        'pinescript', 'pine script', 'indicator', 'strategy alert',
+        'เขียน indicator', 'สร้าง indicator', 'tradingview', 'ta.',
+        'pine', 'สร้าง strategy', 'backtest'
+    ]],
+    ['recovery', [
+        'ขาดทุน', 'เสียเงิน', 'drawdown', 'เครียด', 'หมดตัว', 'ล้างพอร์ต',
+        'ฟื้นพอร์ต', 'losing streak', 'revenge trade', 'overtrade',
+        'cut loss', 'เลิกเทรด', 'ท้อ', 'ติดดอย'
+    ]],
+    ['portfolio', [
+        'portfolio', 'จัดพอร์ต', 'ปรับพอร์ต', 'พอร์ตลงทุน', 'asset allocation',
+        'diversif', 'rebalance', 'สัดส่วนพอร์ต', 'แบ่งพอร์ต'
+    ]],
+    ['macro', [
+        'macro', 'dxy', 'fomc', 'nfp', 'cpi', 'gdp', 'treasury',
+        'เศรษฐกิจ', 'inflation', 'ดอลลาร์', 'recession', 'interest rate',
+        'อัตราดอกเบี้ย', 'ธนาคารกลาง', 'fed'
+    ]],
+    ['analyst', [
+        'วิเคราะห์', 'analysis', 'technical', 'แนวรับ', 'แนวต้าน',
+        'support', 'resistance', 'breakout', 'bearish', 'bullish',
+        'candlestick', 'elliott', 'fibonacci', 'แนวโน้ม'
+    ]]
+    // coach is the fallback — no signals needed
+];
+
+const LATIN_SIGNAL_RE = /^[a-z0-9]/i;
+
+function detectAgentMode(text: string): AgentMode | null {
+    const lower = text.toLowerCase().trim();
+    if (!lower) return null;
+
+    for (const [mode, signals] of MODE_SIGNALS) {
+        for (const signal of signals) {
+            // Short Latin keywords use word-boundary matching to avoid false positives
+            if (signal.length <= 4 && LATIN_SIGNAL_RE.test(signal)) {
+                const re = new RegExp(
+                    `(?:^|[\\s,;:.!?()\\[\\]{}"\\/'#@])${signal}(?:$|[\\s,;:.!?()\\[\\]{}"\\/'#@])`,
+                    'i'
+                );
+                if (re.test(lower)) return mode;
+            } else {
+                if (lower.includes(signal)) return mode;
+            }
+        }
+    }
+
+    return null;
+}
 const AGENT_ROUTE_TYPES: AgentRouteType[] = ['direct_answer', 'single_tool', 'plan_then_execute', 'discussion', 'deep_research'];
 const CONTENT_BLOCK_TYPES = new Set([
     'text',
@@ -136,6 +203,7 @@ function parseStoredMessageRow(row: unknown): Message | null {
         role: row.role,
         content: typeof row.content === 'string' ? row.content : '',
         image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
+        file_name: typeof row.file_name === 'string' ? row.file_name : undefined,
         channel: isChatChannel(row.channel) ? row.channel : undefined,
         runId: typeof row.run_id === 'string' ? row.run_id : undefined,
         mode: isAgentMode(row.mode) ? row.mode : undefined
@@ -174,6 +242,7 @@ class ChatState {
     currentChatId = $state<string | null>(null);
     isLoading = $state(false);
     selectedImage = $state<string | null>(null);
+    selectedFile = $state<FileAttachment | null>(null);
     agentMode = $state<AgentMode>('coach');
     chatMode = $state<ChatMode>('normal');
     lastDbError = $state<string | null>(null);
@@ -440,13 +509,20 @@ class ChatState {
         }
     }
 
-    async sendMessage(content: string, imageUrl?: string) {
-        if (!content.trim() && !imageUrl) return;
+    async sendMessage(content: string, imageUrl?: string, fileAttachment?: FileAttachment) {
+        if (!content.trim() && !imageUrl && !fileAttachment) return;
+
+        // Auto-detect mode from prompt keywords
+        const detected = detectAgentMode(content);
+        if (detected) {
+            this.setAgentMode(detected);
+        }
+
         const modeUsed = this.agentMode;
 
         // 1. Create chat session in Supabase if it doesn't exist.
         if (!this.currentChatId) {
-            const titleText = content || 'Image Analysis';
+            const titleText = content || fileAttachment?.name || 'Image Analysis';
             let data: Chat | null = null;
             let error: { message: string } | null = null;
 
@@ -479,9 +555,17 @@ class ChatState {
         const chatId = this.currentChatId;
 
         // 2. Add and save user message.
-        const userMsg: Message = { role: 'user', content, image_url: imageUrl, mode: modeUsed, channel: 'web' };
+        const userMsg: Message = {
+            role: 'user',
+            content,
+            image_url: imageUrl,
+            file_name: fileAttachment?.name,
+            mode: modeUsed,
+            channel: 'web'
+        };
         this.messages.push(userMsg);
         this.selectedImage = null;
+        this.selectedFile = null;
 
         {
             const basePayload: Record<string, unknown> = {
@@ -491,6 +575,7 @@ class ChatState {
                 channel: 'web'
             };
             if (imageUrl) basePayload.image_url = imageUrl;
+            if (fileAttachment?.name) basePayload.file_name = fileAttachment.name;
             basePayload.mode = modeUsed;
 
             let payload = { ...basePayload };
@@ -507,6 +592,10 @@ class ChatState {
 
                 if (/image_url/i.test(error.message)) {
                     delete payload.image_url;
+                    continue;
+                }
+                if (/file_name/i.test(error.message)) {
+                    delete payload.file_name;
                     continue;
                 }
                 if (/\bmode\b/i.test(error.message)) {
@@ -533,16 +622,31 @@ class ChatState {
 
         try {
             this.abortController = new AbortController();
+            const activeBotId = botState.activeBotId;
+
+            // Build messages for API — inject file_content into the last user message if a file was attached.
+            const apiMessages = fileAttachment
+                ? this.messages.map((m, idx) =>
+                      idx === this.messages.length - 1 && m.role === 'user'
+                          ? { ...m, file_content: fileAttachment.content }
+                          : m
+                  )
+                : this.messages;
+
+            const fetchBody: Record<string, unknown> = {
+                chatId,
+                biglotUserId: this.biglotUserId,
+                messages: apiMessages,
+                mode: this.agentMode,
+                chatMode: activeBotId ? 'agent' : this.chatMode
+            };
+            if (activeBotId) {
+                fetchBody.botId = activeBotId;
+            }
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chatId,
-                    biglotUserId: this.biglotUserId,
-                    messages: this.messages,
-                    mode: this.agentMode,
-                    chatMode: this.chatMode
-                }),
+                body: JSON.stringify(fetchBody),
                 signal: this.abortController.signal
             });
 
@@ -882,6 +986,10 @@ class ChatState {
 
     clearSelectedImage() {
         this.selectedImage = null;
+    }
+
+    clearSelectedFile() {
+        this.selectedFile = null;
     }
 
     async submitFeedback(messageIndex: number, feedback: 'up' | 'down'): Promise<boolean> {

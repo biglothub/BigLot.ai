@@ -1,8 +1,9 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { getSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
+import { getSystemPrompt, getCustomBotSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
 import { getClientForModel, isAIModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
+import { getSupabaseAdminClient } from '$lib/server/supabaseAdmin.server';
 import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 import { runAgentLoop } from '$lib/server/agentLoop.server';
 import { runDiscussionLoop } from '$lib/server/discussionLoop.server';
@@ -24,6 +25,8 @@ type IncomingMessage = {
 	role: 'user' | 'assistant' | 'system';
 	content?: unknown;
 	image_url?: unknown;
+	file_name?: unknown;
+	file_content?: unknown;
 };
 
 function isRole(value: unknown): value is IncomingMessage['role'] {
@@ -123,27 +126,61 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
 	const biglotUserId = typeof payload.biglotUserId === 'string' ? payload.biglotUserId : null;
+	const botId = typeof payload.botId === 'string' ? payload.botId : null;
 
 	const MAX_MESSAGES = 50;
 	const MAX_CHARS = 8000;
+
+	const MAX_FILE_CHARS = 40_000;
 
 	const safeMessages = messagesRaw
 		.filter(isIncomingMessage)
 		.map((message) => ({
 			role: message.role,
 			content: typeof message.content === 'string' ? message.content.slice(0, MAX_CHARS) : '',
-			image_url: typeof message.image_url === 'string' ? message.image_url : undefined
+			image_url: typeof message.image_url === 'string' ? message.image_url : undefined,
+			file_name: typeof message.file_name === 'string' ? message.file_name : undefined,
+			file_content: typeof message.file_content === 'string'
+				? message.file_content.slice(0, MAX_FILE_CHARS)
+				: undefined
 		}))
-		.filter((message) => message.content.trim().length > 0 || (message.role === 'user' && message.image_url))
+		.filter((m) =>
+			m.content.trim().length > 0 ||
+			(m.role === 'user' && m.image_url) ||
+			(m.role === 'user' && m.file_content)
+		)
 		.slice(-MAX_MESSAGES);
 
+	// Custom bot lookup (does not affect default flow when botId is absent)
+	let customBot: { system_prompt: string; tools: string[]; default_model: string | null } | null = null;
+	if (botId && biglotUserId) {
+		try {
+			const supabase = getSupabaseAdminClient();
+			const { data, error: botError } = await supabase
+				.from('custom_bots')
+				.select('system_prompt, tools, default_model, biglot_user_id')
+				.eq('id', botId)
+				.eq('is_active', true)
+				.single();
+
+			if (!botError && data && data.biglot_user_id === biglotUserId) {
+				customBot = { system_prompt: data.system_prompt, tools: data.tools ?? [], default_model: data.default_model };
+			}
+		} catch {
+			// If bot lookup fails, fall through to default behavior
+		}
+	}
+
 	const mode = normalizeAgentMode(payload.mode);
-	const chatMode =
-		payload.chatMode === 'agent'
+	const chatMode = customBot
+		? 'agent' // Custom bots always use agent mode (tools enabled)
+		: payload.chatMode === 'agent'
 			? 'agent'
 			: payload.chatMode === 'discussion'
 				? 'discussion'
-				: 'normal';
+				: payload.chatMode === 'research'
+					? 'research'
+					: 'normal';
 	const latestUserMessage = [...safeMessages].reverse().find((message) => message.role === 'user');
 	const lastUserMessage = latestUserMessage?.content ?? '';
 	const hasImageInput = safeMessages.some((message) => message.role === 'user' && !!message.image_url);
@@ -158,13 +195,20 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				});
 	const isDeepResearch = routeType === 'deep_research';
 	const planningEnabled = shouldEnablePlanning(chatMode, routeType);
-	const systemPrompt = getSystemPrompt(mode, planningEnabled, isDeepResearch);
+
+	// System prompt: custom bot or default mode
+	const systemPrompt = customBot
+		? getCustomBotSystemPrompt(customBot.system_prompt, customBot.tools, planningEnabled, isDeepResearch)
+		: getSystemPrompt(mode, planningEnabled, isDeepResearch);
 
 	const sharedModel = resolveDefaultAIModel();
 	const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : sharedModel;
 	const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : sharedModel;
-	const selectedModel =
-		chatMode === 'discussion' || chatMode === 'agent' || isDeepResearch ? agentModel : normalModel;
+
+	// Model selection: custom bot override → env defaults
+	const selectedModel = customBot?.default_model && isAIModel(customBot.default_model)
+		? customBot.default_model
+		: chatMode === 'discussion' || chatMode === 'agent' || chatMode === 'research' || isDeepResearch ? agentModel : normalModel;
 
 	if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
 		return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
@@ -180,7 +224,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const { client, apiModel, provider, supportsImageInput } = getClientForModel(selectedModel);
 	if (hasImageInput && !supportsImageInput) {
 		const configuredKey =
-			chatMode === 'discussion' || chatMode === 'agent' || isDeepResearch
+			chatMode === 'discussion' || chatMode === 'agent' || chatMode === 'research' || isDeepResearch
 				? 'AGENT_AI_MODEL'
 				: 'NORMAL_AI_MODEL';
 		return json(
@@ -201,6 +245,28 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			content: memoryContext ? `${systemPrompt}\n\n${memoryContext}` : systemPrompt
 		},
 		...safeMessages.map((message): ChatCompletionMessageParam => {
+			if (message.role === 'user' && message.file_content) {
+				const ext = message.file_name?.split('.').pop()?.toLowerCase() ?? '';
+				const langMap: Record<string, string> = {
+					py: 'python', js: 'javascript', ts: 'typescript',
+					json: 'json', csv: 'csv', md: 'markdown',
+					html: 'html', css: 'css', xml: 'xml', yaml: 'yaml', yml: 'yaml'
+				};
+				const lang = langMap[ext] ?? ext;
+				const fileBlock = `[File: ${message.file_name ?? 'attachment'}]\n\`\`\`${lang}\n${message.file_content}\n\`\`\``;
+				const userText = message.content ? `\n\n${message.content}` : '';
+				const fullText = fileBlock + userText;
+
+				return {
+					role: 'user',
+					content: message.image_url
+						? [
+							{ type: 'text' as const, text: fullText },
+							{ type: 'image_url' as const, image_url: { url: message.image_url } }
+						  ]
+						: fullText
+				};
+			}
 			if (message.role === 'user' && message.image_url) {
 				return {
 					role: 'user',
@@ -258,8 +324,8 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     )
                 );
 
-                if (chatMode === 'agent') {
-                    // Agent mode: GPT-4o with tool calling via agent loop
+                if (chatMode === 'agent' || chatMode === 'research') {
+                    // Agent / Research mode: GPT-4o with tool calling via agent loop
                     const allBlocks: ContentBlock[] = [];
 
                     const researchStartTime = Date.now();
@@ -282,6 +348,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 							maxPlanSteps: isDeepResearch ? 10 : 6,
 							planningEnabled,
 							currentMode: mode,
+							allowedTools: customBot?.tools.length ? customBot.tools : undefined,
 							callbacks: {
 								onTextDelta: (text) => {
 									streamedText += text;
