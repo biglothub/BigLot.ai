@@ -1,6 +1,5 @@
 <script lang="ts">
     import type { MacroData } from '$lib/types/dashboardMeta';
-    import AgentOrb from '$lib/components/AgentOrb.svelte';
 
     let { macro }: { macro: MacroData | null } = $props();
 
@@ -13,12 +12,16 @@
         : macro?.goldSignal === 'bearish' ? '#ef4444'
         : '#f59e0b'
     );
+    const signalGlow = $derived(
+        macro?.goldSignal === 'bullish' ? 'rgba(34,197,94,0.25)'
+        : macro?.goldSignal === 'bearish' ? 'rgba(239,68,68,0.25)'
+        : 'rgba(245,158,11,0.25)'
+    );
 </script>
 
 <div class="macro-strip">
     {#if macro}
         <div class="ticker-track">
-            <!-- Duplicate content for seamless loop -->
             {#each [0, 1, 2, 3] as _copy}
                 <div class="ticker-content">
                     {#if macro.dxy}
@@ -58,14 +61,15 @@
                         </div>
                     {/if}
 
-                    <div class="macro-signal" style="border-color:{signalColor}40; background:{signalColor}10">
-                        <span class="macro-signal-label">Gold Signal</span>
+                    <div class="macro-signal" style="background:{signalColor}10; box-shadow: 0 0 12px {signalGlow}, inset 0 0 0 1px {signalColor}30">
+                        <span class="macro-signal-dot" style="background:{signalColor}; box-shadow: 0 0 6px {signalColor}"></span>
+                        <span class="macro-signal-label">Gold</span>
                         <span class="macro-signal-value" style="color:{signalColor}">
                             {macro.goldSignal.toUpperCase()}
                         </span>
                     </div>
 
-                    <span class="ticker-separator"><AgentOrb size="sm" showLabel={false} /></span>
+                    <span class="ticker-dot">·</span>
                 </div>
             {/each}
         </div>
@@ -76,8 +80,8 @@
 
 <style>
     .macro-strip {
-        background: rgba(13, 17, 23, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(10, 12, 18, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: 12px;
         overflow: hidden;
         position: relative;
@@ -99,39 +103,40 @@
         align-items: stretch;
         flex-shrink: 0;
     }
-    .ticker-separator {
+    .ticker-dot {
         display: flex;
         align-items: center;
-        padding: 0 1.5rem;
-        color: rgba(255, 255, 255, 0.15);
-        font-size: 0.6rem;
+        padding: 0 1.2rem;
+        color: rgba(255, 255, 255, 0.12);
+        font-size: 1.4rem;
+        line-height: 1;
     }
     .macro-item {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 0.75rem 1.5rem;
+        padding: 0.65rem 1.25rem;
         white-space: nowrap;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
+        border-right: 1px solid rgba(255, 255, 255, 0.04);
     }
     .macro-label {
-        font-size: 0.6rem;
-        font-weight: 600;
-        color: rgba(255,255,255,0.35);
+        font-size: 0.58rem;
+        font-weight: 700;
+        color: rgba(255,255,255,0.25);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.07em;
     }
     .macro-value {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 700;
-        color: #f8fafc;
+        color: rgba(255,255,255,0.88);
         font-variant-numeric: tabular-nums;
     }
     .macro-change {
-        font-size: 0.65rem;
+        font-size: 0.62rem;
         font-weight: 600;
         font-variant-numeric: tabular-nums;
-        color: rgba(255,255,255,0.4);
+        color: rgba(255,255,255,0.3);
     }
     .macro-change.up { color: #22c55e; }
     .macro-change.down { color: #ef4444; }
@@ -139,24 +144,33 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 0.75rem 1rem;
-        border-left: 2px solid;
+        padding: 0.4rem 0.9rem;
+        margin: 0.35rem 0.5rem;
+        border-radius: 6px;
         white-space: nowrap;
+        align-self: center;
+    }
+    .macro-signal-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
     }
     .macro-signal-label {
         font-size: 0.55rem;
-        color: rgba(255,255,255,0.35);
+        color: rgba(255,255,255,0.3);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.07em;
+        font-weight: 600;
     }
     .macro-signal-value {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: 800;
         letter-spacing: 0.08em;
     }
     .macro-empty {
         font-size: 0.75rem;
-        color: rgba(255,255,255,0.3);
+        color: rgba(255,255,255,0.25);
         padding: 1rem;
         width: 100%;
         text-align: center;

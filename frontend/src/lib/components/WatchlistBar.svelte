@@ -1,6 +1,5 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-    import AgentOrb from './AgentOrb.svelte';
 
     type WatchlistItem = {
         symbol: string;
@@ -70,7 +69,7 @@
                             </span>
                         </div>
                     {/each}
-                    <span class="ticker-dot"><AgentOrb size="sm" showLabel={false} /></span>
+                    <span class="ticker-dot">·</span>
                 </div>
             {/each}
         </div>
@@ -80,17 +79,17 @@
 <style>
     .watchlist-bar {
         overflow: hidden;
-        background: rgba(0, 0, 0, 0.25);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        min-height: 32px;
+        background: rgba(0, 0, 0, 0.3);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        min-height: 36px;
         flex-shrink: 0;
     }
 
     .wl-loading {
-        font-size: 0.65rem;
-        color: rgba(255,255,255,0.3);
+        font-size: 0.62rem;
+        color: rgba(255,255,255,0.25);
         padding: 0 0.75rem;
-        line-height: 32px;
+        line-height: 36px;
     }
 
     .ticker-track {
@@ -113,9 +112,10 @@
     .ticker-dot {
         display: flex;
         align-items: center;
-        padding: 0 1rem;
-        color: rgba(255, 255, 255, 0.12);
-        font-size: 0.5rem;
+        padding: 0 0.85rem;
+        color: rgba(255, 255, 255, 0.1);
+        font-size: 1.4rem;
+        line-height: 1;
     }
 
     .wl-item {
@@ -123,39 +123,49 @@
         align-items: center;
         gap: 0.3rem;
         padding: 0 0.75rem;
-        border-right: 1px solid rgba(255,255,255,0.05);
+        border-right: 1px solid rgba(255,255,255,0.04);
         white-space: nowrap;
         flex-shrink: 0;
-        height: 32px;
+        height: 36px;
     }
 
     .wl-gold {
-        background: rgba(245, 158, 11, 0.04);
+        border-left: 2px solid rgba(245, 158, 11, 0.4);
+        background: rgba(245, 158, 11, 0.03);
     }
 
     .wl-label {
-        font-size: 0.65rem;
-        font-weight: 600;
-        color: rgba(255,255,255,0.4);
+        font-size: 0.6rem;
+        font-weight: 700;
+        color: rgba(255,255,255,0.3);
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.05em;
     }
     .wl-label-gold {
         color: #f59e0b;
+        opacity: 0.85;
     }
 
     .wl-price {
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         font-weight: 600;
-        color: rgba(255,255,255,0.85);
+        color: rgba(255,255,255,0.82);
         font-variant-numeric: tabular-nums;
     }
 
     .wl-change {
-        font-size: 0.65rem;
-        font-weight: 600;
+        font-size: 0.6rem;
+        font-weight: 700;
         font-variant-numeric: tabular-nums;
+        padding: 1px 5px;
+        border-radius: 3px;
     }
-    .wl-up   { color: #22c55e; }
-    .wl-down { color: #ef4444; }
+    .wl-up {
+        color: #22c55e;
+        background: rgba(34,197,94,0.1);
+    }
+    .wl-down {
+        color: #ef4444;
+        background: rgba(239,68,68,0.1);
+    }
 </style>
