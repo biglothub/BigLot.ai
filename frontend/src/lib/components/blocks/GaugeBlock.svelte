@@ -65,15 +65,6 @@
         : '#22c55e'
     );
 
-    // Active arc color (color of the segment where needle points)
-    const activeColor = $derived(() => {
-        if (defaultArcs.length === 0) return '#f59e0b';
-        for (let i = defaultArcs.length - 1; i >= 0; i--) {
-            // approximate: just use the last arc color for the current value zone
-        }
-        const idx = Math.min(Math.floor(pct * defaultArcs.length), defaultArcs.length - 1);
-        return defaultArcs[idx]?.color ?? '#f59e0b';
-    });
 </script>
 
 <div class="gauge-block">
@@ -112,7 +103,17 @@
         <circle cx={cx} cy={cy} r="3" fill="rgba(255,255,255,0.5)" />
 
         <!-- Value label -->
-        <text x={cx} y={cy + 22} text-anchor="middle" font-size="13" fill="rgba(255,255,255,0.9)" font-weight="700" font-variant-numeric="tabular-nums">{value}</text>
+        <text
+            x={cx}
+            y={cy + 22}
+            text-anchor="middle"
+            font-size="13"
+            fill="rgba(255,255,255,0.9)"
+            font-weight="700"
+            style="font-variant-numeric: tabular-nums"
+        >
+            {value}
+        </text>
     </svg>
     <div class="gauge-label" style="color:{labelColor}">{label}</div>
 </div>

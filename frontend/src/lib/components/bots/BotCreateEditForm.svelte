@@ -12,18 +12,16 @@
 		onCancel: () => void;
 	} = $props();
 
-	const isEditing = !!bot;
+	const isEditing = $derived(!!bot);
 
 	// Form state
-	let name = $state(bot?.name ?? '');
-	let description = $state(bot?.description ?? '');
-	let avatar = $state(bot?.avatar ?? '🤖');
-	let systemPrompt = $state(bot?.system_prompt ?? '');
-	let selectedTools = $state<string[]>(bot?.tools ?? []);
-	let defaultModel = $state<string>(bot?.default_model ?? '');
-	let conversationStarters = $state<string[]>(
-		bot?.conversation_starters?.length ? [...bot.conversation_starters] : ['']
-	);
+	let name = $state('');
+	let description = $state('');
+	let avatar = $state('🤖');
+	let systemPrompt = $state('');
+	let selectedTools = $state<string[]>([]);
+	let defaultModel = $state<string>('');
+	let conversationStarters = $state<string[]>(['']);
 	let isSaving = $state(false);
 	let error = $state<string | null>(null);
 
@@ -34,6 +32,17 @@
 		'🐻', '🌍', '🏛️', '📰', '🧮', '🔥', '⭐', '🎲'
 	];
 	let showEmojiPicker = $state(false);
+
+	$effect(() => {
+		name = bot?.name ?? '';
+		description = bot?.description ?? '';
+		avatar = bot?.avatar ?? '🤖';
+		systemPrompt = bot?.system_prompt ?? '';
+		selectedTools = bot?.tools ? [...bot.tools] : [];
+		defaultModel = bot?.default_model ?? '';
+		conversationStarters =
+			bot?.conversation_starters?.length ? [...bot.conversation_starters] : [''];
+	});
 
 	// Available tools (grouped)
 	const TOOL_GROUPS = [
@@ -194,9 +203,10 @@
 
 	<!-- Instructions (System Prompt) -->
 	<div>
-		<label class="block text-sm font-medium text-foreground/80 mb-1.5">Instructions</label>
+		<label for="bot-system-prompt" class="block text-sm font-medium text-foreground/80 mb-1.5">Instructions</label>
 		<p class="text-[11px] text-muted-foreground mb-2">Tell the bot how to behave, what role to play, and what to avoid.</p>
 		<textarea
+			id="bot-system-prompt"
 			bind:value={systemPrompt}
 			placeholder="You are a trading assistant specialized in..."
 			maxlength={8000}
@@ -210,9 +220,9 @@
 
 	<!-- Tools -->
 	<div>
-		<label class="block text-sm font-medium text-foreground/80 mb-1.5">Tools</label>
+		<div id="bot-tools-label" class="block text-sm font-medium text-foreground/80 mb-1.5">Tools</div>
 		<p class="text-[11px] text-muted-foreground mb-2">Select which tools this bot can use.</p>
-		<div class="space-y-3">
+		<div class="space-y-3" role="group" aria-labelledby="bot-tools-label">
 			{#each TOOL_GROUPS as group}
 				<div>
 					<div class="text-[11px] text-muted-foreground font-medium mb-1">{group.label}</div>
@@ -237,8 +247,9 @@
 
 	<!-- Model -->
 	<div>
-		<label class="block text-sm font-medium text-foreground/80 mb-1.5">Model (optional)</label>
+		<label for="bot-model" class="block text-sm font-medium text-foreground/80 mb-1.5">Model (optional)</label>
 		<select
+			id="bot-model"
 			bind:value={defaultModel}
 			class="w-full max-w-xs bg-secondary/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/40"
 		>
@@ -250,12 +261,13 @@
 
 	<!-- Conversation Starters -->
 	<div>
-		<label class="block text-sm font-medium text-foreground/80 mb-1.5">Conversation Starters</label>
+		<div id="bot-starters-label" class="block text-sm font-medium text-foreground/80 mb-1.5">Conversation Starters</div>
 		<p class="text-[11px] text-muted-foreground mb-2">Suggested prompts shown when starting a new chat (max 6).</p>
-		<div class="space-y-2">
+		<div class="space-y-2" role="group" aria-labelledby="bot-starters-label">
 			{#each conversationStarters as starter, i}
 				<div class="flex items-center gap-2">
 					<input
+						id={`bot-starter-${i}`}
 						type="text"
 						bind:value={conversationStarters[i]}
 						placeholder="e.g. What's the gold outlook?"
