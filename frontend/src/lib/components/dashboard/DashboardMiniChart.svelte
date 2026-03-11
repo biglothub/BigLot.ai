@@ -4,11 +4,13 @@
     let {
         ohlcv,
         interval,
-        showHeader = true
+        showHeader = true,
+        chrome = 'standalone'
     }: {
         ohlcv: OHLCV[] | null;
         interval?: string;
         showHeader?: boolean;
+        chrome?: 'standalone' | 'embedded';
     } = $props();
 
     const svgW = 600;
@@ -62,7 +64,7 @@
     });
 </script>
 
-<div class="mini-chart-wrap">
+<div class="mini-chart-wrap" class:mini-chart-wrap-embedded={chrome === 'embedded'}>
     {#if ohlcv && ohlcv.length > 0 && layout}
         {#if showHeader}
             <div class="mini-chart-header">
@@ -130,6 +132,12 @@
         border-radius: 12px;
         padding: 0.75rem;
         overflow: hidden;
+    }
+    .mini-chart-wrap-embedded {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
     }
     .mini-chart-header {
         display: flex;

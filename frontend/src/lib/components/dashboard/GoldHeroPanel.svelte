@@ -1,7 +1,13 @@
 <script lang="ts">
     import type { GoldPriceData } from '$lib/types/dashboardMeta';
 
-    let { gold }: { gold: GoldPriceData | null } = $props();
+    let {
+        gold,
+        chrome = 'standalone'
+    }: {
+        gold: GoldPriceData | null;
+        chrome?: 'standalone' | 'embedded';
+    } = $props();
 
     const isUp = $derived(gold ? gold.change24hPct >= 0 : true);
     const changeColor = $derived(isUp ? '#22c55e' : '#ef4444');
@@ -13,7 +19,7 @@
     }
 </script>
 
-<div class="hero-panel">
+<div class="hero-panel" class:hero-panel-embedded={chrome === 'embedded'}>
     {#if gold}
         <div class="hero-top">
             <div class="hero-icon">
@@ -95,6 +101,16 @@
         top: 0; left: 0; right: 0;
         height: 1px;
         background: linear-gradient(90deg, transparent, rgba(245,158,11,0.4), transparent);
+    }
+    .hero-panel-embedded {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        overflow: visible;
+    }
+    .hero-panel-embedded::before {
+        display: none;
     }
     .hero-top {
         display: flex;

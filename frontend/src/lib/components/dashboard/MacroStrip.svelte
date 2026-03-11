@@ -1,7 +1,13 @@
 <script lang="ts">
     import type { MacroData } from '$lib/types/dashboardMeta';
 
-    let { macro }: { macro: MacroData | null } = $props();
+    let {
+        macro,
+        chrome = 'standalone'
+    }: {
+        macro: MacroData | null;
+        chrome?: 'standalone' | 'embedded';
+    } = $props();
 
     function fmtChange(n: number): string {
         return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
@@ -19,7 +25,7 @@
     );
 </script>
 
-<div class="macro-strip">
+<div class="macro-strip" class:macro-strip-embedded={chrome === 'embedded'}>
     {#if macro}
         <div class="ticker-track">
             {#each [0, 1, 2, 3] as _copy}
@@ -85,6 +91,11 @@
         border-radius: 12px;
         overflow: hidden;
         position: relative;
+    }
+    .macro-strip-embedded {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
     }
     .ticker-track {
         display: flex;

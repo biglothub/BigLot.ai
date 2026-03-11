@@ -1,10 +1,11 @@
 <script lang="ts">
+    import Sidebar from "$lib/components/Sidebar.svelte";
     import { onDestroy, onMount } from 'svelte';
-    import { fade } from 'svelte/transition';
+    import { fade, fly } from 'svelte/transition';
+    import { Activity, Calendar, RefreshCw } from "lucide-svelte";
     import GoldHeroPanel from '$lib/components/dashboard/GoldHeroPanel.svelte';
     import MacroStrip from '$lib/components/dashboard/MacroStrip.svelte';
     import DashboardMiniChart from '$lib/components/dashboard/DashboardMiniChart.svelte';
-    import AgentOrb from '$lib/components/AgentOrb.svelte';
     import {
         DASHBOARD_TIMEFRAMES,
         type DashboardResponse,
@@ -21,7 +22,16 @@
         cot: 'COT',
         chart: 'Chart'
     };
+    const timeframeLabels: Record<DashboardTimeframe, string> = {
+        '1d': '1D',
+        '1wk': '1W',
+        '1mo': '1M',
+        '3mo': '3M',
+        '6mo': '6M',
+        '1y': '1Y'
+    };
 
+    let sidebarOpen = $state(true);
     let data = $state<DashboardResponse | null>(null);
     let initialLoading = $state(true);
     let refreshing = $state(false);
@@ -35,12 +45,17 @@
 
     const meta = $derived(data?._meta ?? null);
     const busy = $derived(initialLoading || refreshing || switchingTimeframe);
+    const heroEyebrow = $derived(`Live market framing · ${formatTimeframeLabel(selectedTimeframe)}`);
 
     function normalizeTimeframe(value: string | null | undefined): DashboardTimeframe {
         if (value && DASHBOARD_TIMEFRAMES.includes(value as DashboardTimeframe)) {
             return value as DashboardTimeframe;
         }
         return '1mo';
+    }
+
+    function formatTimeframeLabel(timeframe: DashboardTimeframe): string {
+        return timeframeLabels[timeframe] ?? timeframe.toUpperCase();
     }
 
     function readTimeframeFromUrl(): DashboardTimeframe {
@@ -91,6 +106,8 @@
         }
 
         try {
+            fetchError = null;
+
             const res = await fetch(buildApiUrl(timeframe), {
                 signal: abortController.signal
             });
@@ -104,7 +121,6 @@
 
             data = nextData;
             selectedTimeframe = nextData.chart?.timeframe ?? timeframe;
-            fetchError = null;
             updateLastUpdate(nextData.updatedAt);
             syncUrlTimeframe(selectedTimeframe);
         } catch (error) {
@@ -135,6 +151,10 @@
         selectedTimeframe = timeframe;
         syncUrlTimeframe(timeframe);
         await fetchDashboard('timeframe', timeframe);
+    }
+
+    async function handleRefresh() {
+        await fetchDashboard('poll', selectedTimeframe);
     }
 
     function handlePopState() {
@@ -197,7 +217,7 @@
     }
 
     function refreshLabel(): string {
-        if (switchingTimeframe) return `Switching to ${selectedTimeframe}`;
+        if (switchingTimeframe) return `Switching to ${formatTimeframeLabel(selectedTimeframe)}`;
         if (refreshing) return 'Refreshing';
         return 'Live';
     }
@@ -221,327 +241,696 @@
     <title>Dashboard — BigLot.ai</title>
 </svelte:head>
 
-<div class="dashboard-page">
-    <header class="dash-header">
-        <div class="dash-header-left">
-            <a href="/" class="dash-back" aria-label="Back to chat">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M15 18l-6-6 6-6"/>
-                </svg>
-            </a>
-            <h1 class="dash-title">
-                <span class="dash-title-gradient">BigLot.ai</span>
-                <span class="dash-title-sub">Dashboard</span>
-            </h1>
-        </div>
+<div class="flex h-full overflow-hidden bg-background text-foreground font-sans">
+    <Sidebar bind:isOpen={sidebarOpen} />
 
-        <div class="dash-header-right">
-            {#if meta?.warnings?.length}
-                <span class="dash-warning-badge" title={meta.warnings.join('\n')}>
-                    {meta.warnings.length} warning{meta.warnings.length > 1 ? 's' : ''}
-                </span>
-            {/if}
-            {#if lastUpdate}
-                <span class="dash-updated">Updated {lastUpdate} ICT</span>
-            {/if}
-            <span class="dash-status-text">{refreshLabel()}</span>
-            <div class="dash-refresh-dot" class:dash-loading={busy}>
-                <AgentOrb size="sm" status={busy ? 'analyzing' : 'idle'} showLabel={false} />
-            </div>
-        </div>
-    </header>
-
-    {#if fetchError}
-        <div class="dash-error-banner">{fetchError}</div>
-    {/if}
-
-    {#if meta?.sources?.length}
-        <section class="source-health-row" transition:fade>
-            {#each sourceOrder as source}
-                {@const sourceMeta = getSourceMeta(source)}
-                {@const cardColor = statusColor(sourceMeta?.status ?? 'error')}
-                <article
-                    class="source-card"
-                    style={`--source-color:${cardColor};`}
-                >
-                    <div class="source-card-top">
-                        <span class="source-card-label">{sourceLabels[source]}</span>
-                        <span class="source-card-status">{sourceMeta?.status ?? 'error'}</span>
+    <main
+        class="dashboard-main flex-1 overflow-hidden h-full transition-all duration-300"
+        class:ml-64={sidebarOpen}
+        class:ml-0={!sidebarOpen}
+    >
+        <div class="dashboard-scroll">
+            <div class="dashboard-container">
+                <header class="dashboard-hero">
+                    <div class="hero-copy">
+                        <p class="hero-eyebrow">{heroEyebrow}</p>
+                        <h1 class="hero-title">Gold Dashboard</h1>
+                        <p class="hero-description">
+                            A premium snapshot of gold price, macro pressure, COT positioning, and
+                            chart context for fast market orientation.
+                        </p>
                     </div>
-                    <div class="source-card-summary">{sourceMeta?.summary ?? 'Status unavailable'}</div>
-                    <div class="source-card-time">
-                        {#if sourceMeta}
-                            Checked {formatCheckedAt(sourceMeta.fetchedAt)} ICT
-                        {:else}
-                            Not available
+
+                    <div class="hero-actions">
+                        {#if lastUpdate}
+                            <div class="meta-pill">
+                                <Calendar size={14} />
+                                <span>Updated {lastUpdate} ICT</span>
+                            </div>
                         {/if}
-                    </div>
-                    {#if sourceMeta?.details?.length}
-                        <div class="source-card-details">
-                            {#each sourceMeta.details.slice(0, 2) as detail}
-                                <span>{detail}</span>
-                            {/each}
+
+                        {#if meta?.warnings?.length}
+                            <div class="meta-pill warning-pill">
+                                <span>{meta.warnings.length} warning{meta.warnings.length > 1 ? 's' : ''}</span>
+                            </div>
+                        {/if}
+
+                        <div class="meta-pill live-pill">
+                            <Activity size={14} />
+                            <span>{refreshLabel()}</span>
+                            <span class="live-dot" class:is-busy={busy}></span>
                         </div>
-                    {/if}
-                </article>
-            {/each}
-        </section>
-    {/if}
 
-    {#if initialLoading && !data}
-        <div class="dash-loading-state" transition:fade>
-            <AgentOrb size="lg" status="analyzing" />
-            <p class="dash-loading-text">Loading dashboard...</p>
-        </div>
-    {:else if !data}
-        <div class="dash-empty-state" transition:fade>
-            <AgentOrb size="lg" status="idle" />
-            <p class="dash-loading-text">Dashboard data unavailable</p>
-        </div>
-    {:else}
-        <div class="dash-grid" transition:fade>
-            <div class="dash-cell dash-hero">
-                <GoldHeroPanel gold={data.gold} />
-            </div>
+                        <button
+                            class="refresh-button"
+                            onclick={handleRefresh}
+                            disabled={busy}
+                        >
+                            <span class:is-spinning={busy}>
+                                <RefreshCw size={15} />
+                            </span>
+                            <span>{refreshing ? 'Refreshing' : 'Refresh'}</span>
+                        </button>
+                    </div>
+                </header>
 
-            <div class="dash-cell dash-chart">
-                <div class="chart-panel">
-                    <div class="chart-panel-header">
+                {#if fetchError && data}
+                    <div class="inline-notice" transition:fade={{ duration: 180 }}>
                         <div>
-                            <div class="chart-title">GC=F Gold Futures</div>
-                            <div class="chart-subtitle">
-                                {#if data.chart}
-                                    {data.chart.interval} candles
-                                {:else}
-                                    Awaiting chart data
-                                {/if}
-                            </div>
+                            <p class="notice-label">Refresh failed</p>
+                            <p class="notice-copy">{fetchError}</p>
                         </div>
+                        <button class="notice-action" onclick={handleRefresh}>
+                            Try again
+                        </button>
+                    </div>
+                {/if}
 
-                        <div class="timeframe-switcher">
-                            {#each DASHBOARD_TIMEFRAMES as timeframe}
-                                <button
-                                    type="button"
-                                    class="timeframe-btn"
-                                    class:timeframe-btn-active={selectedTimeframe === timeframe}
-                                    onclick={() => handleTimeframeChange(timeframe)}
-                                >
-                                    {timeframe}
-                                </button>
+                {#if initialLoading && !data}
+                    <div class="content-stack" aria-hidden="true">
+                        <section class="dashboard-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <div class="skeleton-line skeleton-line-short"></div>
+                                    <div class="skeleton-line skeleton-line-medium"></div>
+                                </div>
+                                <div class="skeleton-line skeleton-line-caption"></div>
+                            </div>
+
+                            <div class="source-grid">
+                                {#each Array.from({ length: 4 }) as _, index}
+                                    <article class="source-card skeleton-card" data-skeleton-source={index}>
+                                        <div class="skeleton-line skeleton-line-short"></div>
+                                        <div class="skeleton-line skeleton-line-medium"></div>
+                                        <div class="skeleton-line skeleton-line-short"></div>
+                                    </article>
+                                {/each}
+                            </div>
+                        </section>
+
+                        <div class="feature-grid">
+                            {#each Array.from({ length: 2 }) as _, index}
+                                <section class="dashboard-panel" data-feature-skeleton={index}>
+                                    <div class="panel-head">
+                                        <div>
+                                            <div class="skeleton-line skeleton-line-short"></div>
+                                            <div class="skeleton-line skeleton-line-medium"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="skeleton-panel-body">
+                                        <div class="skeleton-badge"></div>
+                                        <div class="skeleton-line skeleton-line-value"></div>
+                                        <div class="skeleton-line skeleton-line-medium"></div>
+                                        <div class="skeleton-line skeleton-line-medium"></div>
+                                    </div>
+                                </section>
                             {/each}
                         </div>
-                    </div>
 
-                    <DashboardMiniChart
-                        ohlcv={data.chart?.ohlcv ?? null}
-                        interval={data.chart?.interval}
-                        showHeader={false}
-                    />
-                </div>
-            </div>
+                        <div class="market-grid">
+                            {#each Array.from({ length: 2 }) as _, index}
+                                <section class="dashboard-panel" data-market-skeleton={index}>
+                                    <div class="panel-head">
+                                        <div>
+                                            <div class="skeleton-line skeleton-line-short"></div>
+                                            <div class="skeleton-line skeleton-line-medium"></div>
+                                        </div>
+                                        {#if index === 0}
+                                            <div class="timeframe-switcher">
+                                                {#each Array.from({ length: 4 }) as __}
+                                                    <div class="skeleton-pill"></div>
+                                                {/each}
+                                            </div>
+                                        {/if}
+                                    </div>
 
-            <div class="dash-cell dash-macro">
-                <MacroStrip macro={data.macro} />
-            </div>
-
-            <div class="dash-cell dash-cot">
-                <div class="cot-panel">
-                    {#if data.cot}
-                        {@const cotNeedlePoint = cotNeedle(data.cot.netSpec)}
-                        <div class="cot-title">COT Positioning</div>
-                        <div class="cot-body">
-                            <svg viewBox="0 0 100 60" class="cot-gauge-svg">
-                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6" stroke-linecap="round"/>
-                                <path d="M 10 50 A 40 40 0 0 1 30 14.2" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
-                                <path d="M 30 14.2 A 40 40 0 0 1 50 10" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" opacity="0.6"/>
-                                <path d="M 50 10 A 40 40 0 0 1 70 14.2" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
-                                <path d="M 70 14.2 A 40 40 0 0 1 90 50" fill="none" stroke="#ef4444" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
-                                <line x1="50" y1="50" x2={cotNeedlePoint.x} y2={cotNeedlePoint.y} stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>
-                                <circle cx="50" cy="50" r="3" fill="#f8fafc"/>
-                            </svg>
-
-                            <div class="cot-metrics">
-                                <div class="cot-metric">
-                                    <span class="cot-metric-label">Net Spec</span>
-                                    <span class="cot-metric-value">{fmtK(data.cot.netSpec)}</span>
-                                </div>
-                                <div class="cot-metric">
-                                    <span class="cot-metric-label">WoW</span>
-                                    <span class="cot-metric-value" class:cot-up={data.cot.wowChange > 0} class:cot-down={data.cot.wowChange < 0}>
-                                        {fmtK(data.cot.wowChange)}
-                                    </span>
-                                </div>
-                                <div class="cot-metric">
-                                    <span class="cot-metric-label">Signal</span>
-                                    <span class="cot-metric-value cot-classification">{data.cot.classification}</span>
-                                </div>
-                            </div>
+                                    <div class="chart-skeleton" class:compact-chart-skeleton={index === 1}>
+                                        <div class="skeleton-chart-grid"></div>
+                                    </div>
+                                </section>
+                            {/each}
                         </div>
 
-                        <div class="cot-report-date" class:cot-stale={data.cot.reportAgeMs > 8 * 86_400_000}>
-                            Report: {data.cot.reportDate}
-                            <span class="cot-lag-tag">lag {cotLagDays(data.cot.reportAgeMs)}d</span>
-                            {#if data.cot.reportAgeMs > 8 * 86_400_000}
-                                <span class="cot-stale-tag">stale</span>
+                        <section class="dashboard-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <div class="skeleton-line skeleton-line-short"></div>
+                                    <div class="skeleton-line skeleton-line-medium"></div>
+                                </div>
+                            </div>
+
+                            <div class="macro-skeleton">
+                                {#each Array.from({ length: 5 }) as _, index}
+                                    <div class="skeleton-pill macro-skeleton-pill" data-macro-pill={index}></div>
+                                {/each}
+                            </div>
+                        </section>
+                    </div>
+                {:else if !data}
+                    <div class="state-shell">
+                        <section class="state-card" transition:fly={{ y: 14, duration: 220 }}>
+                            <p class="state-kicker">{fetchError ? 'Unavailable' : 'Awaiting data'}</p>
+                            <h2 class="state-title">
+                                {fetchError ? 'Dashboard could not be loaded' : 'Dashboard data unavailable'}
+                            </h2>
+                            <p class="state-copy">
+                                {fetchError ?? 'The dashboard feed returned no renderable data.'}
+                            </p>
+                            <button class="refresh-button" onclick={() => fetchDashboard('initial', selectedTimeframe)}>
+                                <RefreshCw size={15} />
+                                <span>Retry</span>
+                            </button>
+                        </section>
+                    </div>
+                {:else}
+                    <div class="content-stack" transition:fade={{ duration: 180 }}>
+                        <section class="dashboard-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="panel-eyebrow">System health</p>
+                                    <h2 class="panel-title">Source availability and freshness</h2>
+                                </div>
+                                <p class="panel-caption">
+                                    Gold, macro, COT, and chart feeds behind this snapshot
+                                </p>
+                            </div>
+
+                            {#if meta?.sources?.length}
+                                <div class="source-grid">
+                                    {#each sourceOrder as source}
+                                        {@const sourceMeta = getSourceMeta(source)}
+                                        {@const cardColor = statusColor(sourceMeta?.status ?? 'error')}
+                                        <article
+                                            class="source-card"
+                                            style={`--source-color:${cardColor};`}
+                                        >
+                                            <div class="source-card-top">
+                                                <span class="source-card-label">{sourceLabels[source]}</span>
+                                                <span class="source-card-status">{sourceMeta?.status ?? 'error'}</span>
+                                            </div>
+                                            <div class="source-card-summary">
+                                                {sourceMeta?.summary ?? 'Status unavailable'}
+                                            </div>
+                                            <div class="source-card-time">
+                                                {#if sourceMeta}
+                                                    Checked {formatCheckedAt(sourceMeta.fetchedAt)} ICT
+                                                {:else}
+                                                    Not available
+                                                {/if}
+                                            </div>
+                                            {#if sourceMeta?.details?.length}
+                                                <div class="source-card-details">
+                                                    {#each sourceMeta.details.slice(0, 2) as detail}
+                                                        <span>{detail}</span>
+                                                    {/each}
+                                                </div>
+                                            {/if}
+                                        </article>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <div class="empty-card">
+                                    <p class="empty-title">Source metadata unavailable</p>
+                                    <p class="empty-copy">
+                                        Feed diagnostics will appear here once the dashboard returns
+                                        source-level health information.
+                                    </p>
+                                </div>
                             {/if}
-                        </div>
-                    {:else}
-                        <div class="cot-empty">COT data unavailable</div>
-                    {/if}
-                </div>
-            </div>
+                        </section>
 
-            <div class="dash-cell dash-signal">
-                <div class="signal-panel">
-                    <div class="signal-header">
-                        <div class="signal-title">Market Assessment</div>
-                        <span class="signal-confidence">{data.assessment.confidence} confidence</span>
-                    </div>
-
-                    <div class="signal-score-row">
-                        <div class="signal-score">{data.assessment.score}</div>
-                        <div class="signal-score-meta">
-                            <div class="signal-badge" style={`background:${signalColor(data.assessment.signal)}18; border-color:${signalColor(data.assessment.signal)}40; color:${signalColor(data.assessment.signal)};`}>
-                                {data.assessment.signal.toUpperCase()}
-                            </div>
-                            <div class="signal-summary">{data.assessment.summary}</div>
-                        </div>
-                    </div>
-
-                    <div class="signal-score-track">
-                        <div class="signal-score-fill" style={`width:${data.assessment.score}%; background:${signalColor(data.assessment.signal)};`}></div>
-                    </div>
-
-                    <div class="signal-driver-list">
-                        {#each data.assessment.drivers as driver}
-                            <div class="signal-driver">
-                                <div class="signal-driver-top">
-                                    <span class="signal-driver-label">{driver.label}</span>
-                                    <span
-                                        class="signal-driver-impact"
-                                        class:signal-driver-up={driver.direction === 'bullish'}
-                                        class:signal-driver-down={driver.direction === 'bearish'}
-                                    >
-                                        {fmtImpact(driver.impact)}
-                                    </span>
+                        <div class="feature-grid">
+                            <section class="dashboard-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="panel-eyebrow">Gold pulse</p>
+                                        <h2 class="panel-title">Spot, Thai gold, and range context</h2>
+                                    </div>
+                                    <p class="panel-caption">
+                                        Primary price framing for the current dashboard snapshot
+                                    </p>
                                 </div>
-                                <div class="signal-driver-detail">{driver.detail}</div>
-                            </div>
-                        {/each}
-                    </div>
-                </div>
-            </div>
 
+                                <GoldHeroPanel gold={data.gold} chrome="embedded" />
+                            </section>
+
+                            <section class="dashboard-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="panel-eyebrow">Market assessment</p>
+                                        <h2 class="panel-title">Market Assessment</h2>
+                                    </div>
+                                    <p class="panel-caption">
+                                        Composite score derived from macro and positioning inputs
+                                    </p>
+                                </div>
+
+                                <div class="signal-panel">
+                                    <div class="signal-header">
+                                        <span class="signal-confidence">
+                                            {data.assessment.confidence} confidence
+                                        </span>
+                                    </div>
+
+                                    <div class="signal-score-row">
+                                        <div class="signal-score">{data.assessment.score}</div>
+                                        <div class="signal-score-meta">
+                                            <div
+                                                class="signal-badge"
+                                                style={`background:${signalColor(data.assessment.signal)}18; border-color:${signalColor(data.assessment.signal)}40; color:${signalColor(data.assessment.signal)};`}
+                                            >
+                                                {data.assessment.signal.toUpperCase()}
+                                            </div>
+                                            <div class="signal-summary">{data.assessment.summary}</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="signal-score-track">
+                                        <div
+                                            class="signal-score-fill"
+                                            style={`width:${data.assessment.score}%; background:${signalColor(data.assessment.signal)};`}
+                                        ></div>
+                                    </div>
+
+                                    <div class="signal-driver-list">
+                                        {#each data.assessment.drivers as driver}
+                                            <div class="signal-driver">
+                                                <div class="signal-driver-top">
+                                                    <span class="signal-driver-label">{driver.label}</span>
+                                                    <span
+                                                        class="signal-driver-impact"
+                                                        class:signal-driver-up={driver.direction === 'bullish'}
+                                                        class:signal-driver-down={driver.direction === 'bearish'}
+                                                    >
+                                                        {fmtImpact(driver.impact)}
+                                                    </span>
+                                                </div>
+                                                <div class="signal-driver-detail">{driver.detail}</div>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div class="market-grid">
+                            <section class="dashboard-panel">
+                                <div class="panel-head panel-head-aligned-top">
+                                    <div>
+                                        <p class="panel-eyebrow">Gold chart</p>
+                                        <h2 class="panel-title">GC=F Gold Futures</h2>
+                                    </div>
+
+                                    <div class="chart-header-actions">
+                                        <p class="chart-subtitle">
+                                            {#if data.chart}
+                                                {data.chart.interval} candles
+                                            {:else}
+                                                Awaiting chart data
+                                            {/if}
+                                        </p>
+
+                                        <div class="timeframe-switcher">
+                                            {#each DASHBOARD_TIMEFRAMES as timeframe}
+                                                <button
+                                                    type="button"
+                                                    class="timeframe-btn"
+                                                    class:timeframe-btn-active={selectedTimeframe === timeframe}
+                                                    onclick={() => handleTimeframeChange(timeframe)}
+                                                >
+                                                    {formatTimeframeLabel(timeframe)}
+                                                </button>
+                                            {/each}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <DashboardMiniChart
+                                    ohlcv={data.chart?.ohlcv ?? null}
+                                    interval={data.chart?.interval}
+                                    showHeader={false}
+                                    chrome="embedded"
+                                />
+                            </section>
+
+                            <section class="dashboard-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="panel-eyebrow">Positioning</p>
+                                        <h2 class="panel-title">COT Positioning</h2>
+                                    </div>
+                                    <p class="panel-caption">Weekly futures positioning and momentum shift</p>
+                                </div>
+
+                                <div class="cot-panel">
+                                    {#if data.cot}
+                                        {@const cotNeedlePoint = cotNeedle(data.cot.netSpec)}
+                                        <div class="cot-body">
+                                            <svg viewBox="0 0 100 60" class="cot-gauge-svg">
+                                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6" stroke-linecap="round"></path>
+                                                <path d="M 10 50 A 40 40 0 0 1 30 14.2" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" opacity="0.4"></path>
+                                                <path d="M 30 14.2 A 40 40 0 0 1 50 10" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" opacity="0.6"></path>
+                                                <path d="M 50 10 A 40 40 0 0 1 70 14.2" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" opacity="0.5"></path>
+                                                <path d="M 70 14.2 A 40 40 0 0 1 90 50" fill="none" stroke="#ef4444" stroke-width="6" stroke-linecap="round" opacity="0.4"></path>
+                                                <line x1="50" y1="50" x2={cotNeedlePoint.x} y2={cotNeedlePoint.y} stroke="#f8fafc" stroke-width="2" stroke-linecap="round"></line>
+                                                <circle cx="50" cy="50" r="3" fill="#f8fafc"></circle>
+                                            </svg>
+
+                                            <div class="cot-metrics">
+                                                <div class="cot-metric">
+                                                    <span class="cot-metric-label">Net Spec</span>
+                                                    <span class="cot-metric-value">{fmtK(data.cot.netSpec)}</span>
+                                                </div>
+                                                <div class="cot-metric">
+                                                    <span class="cot-metric-label">WoW</span>
+                                                    <span class="cot-metric-value" class:cot-up={data.cot.wowChange > 0} class:cot-down={data.cot.wowChange < 0}>
+                                                        {fmtK(data.cot.wowChange)}
+                                                    </span>
+                                                </div>
+                                                <div class="cot-metric">
+                                                    <span class="cot-metric-label">Signal</span>
+                                                    <span class="cot-metric-value cot-classification">{data.cot.classification}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="cot-report-date" class:cot-stale={data.cot.reportAgeMs > 8 * 86_400_000}>
+                                            Report: {data.cot.reportDate}
+                                            <span class="cot-lag-tag">lag {cotLagDays(data.cot.reportAgeMs)}d</span>
+                                            {#if data.cot.reportAgeMs > 8 * 86_400_000}
+                                                <span class="cot-stale-tag">stale</span>
+                                            {/if}
+                                        </div>
+                                    {:else}
+                                        <div class="empty-card compact-empty-card">
+                                            <p class="empty-title">COT data unavailable</p>
+                                            <p class="empty-copy">
+                                                Weekly positioning will appear here once the feed is restored.
+                                            </p>
+                                        </div>
+                                    {/if}
+                                </div>
+                            </section>
+                        </div>
+
+                        <section class="dashboard-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="panel-eyebrow">Macro context</p>
+                                    <h2 class="panel-title">Dollar, yields, equities, and bias</h2>
+                                </div>
+                                <p class="panel-caption">
+                                    Moving tape of the core macro inputs that shape the gold view
+                                </p>
+                            </div>
+
+                            <p class="section-note">
+                                The strip keeps dollar strength, rates, equities, and derived gold
+                                signal in one line for quick context checks.
+                            </p>
+
+                            <MacroStrip macro={data.macro} chrome="embedded" />
+                        </section>
+                    </div>
+                {/if}
+            </div>
         </div>
-    {/if}
+    </main>
 </div>
 
 <style>
-    .dashboard-page {
-        min-height: 100vh;
-        background: var(--color-background, #0a0a0f);
-        color: #f8fafc;
-        font-family: var(--font-sans, system-ui, sans-serif);
+    .dashboard-main {
+        position: relative;
+        background:
+            radial-gradient(circle at top, rgba(214, 181, 123, 0.14), transparent 30%),
+            radial-gradient(circle at 85% 15%, rgba(244, 238, 220, 0.08), transparent 24%),
+            linear-gradient(180deg, #0d0c0a 0%, #060606 100%);
     }
 
-    .dash-header {
+    .dashboard-main::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(135deg, rgba(214, 181, 123, 0.08), transparent 40%),
+            linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.02));
+    }
+
+    .dashboard-scroll {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .dashboard-container {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 3.5rem 2rem 4rem;
+    }
+
+    .dashboard-hero,
+    .panel-head,
+    .source-card,
+    .inline-notice,
+    .state-card,
+    .empty-card,
+    .signal-driver {
+        border: 1px solid rgba(214, 181, 123, 0.16);
+    }
+
+    .dashboard-hero {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1.5rem;
+        padding: 0 0 2rem;
+        margin-bottom: 1.75rem;
+        border-width: 0 0 1px;
+    }
+
+    .hero-copy {
+        max-width: 42rem;
+    }
+
+    .hero-eyebrow,
+    .panel-eyebrow,
+    .notice-label,
+    .state-kicker {
+        margin: 0;
+        color: rgba(227, 207, 165, 0.72);
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.72rem;
+    }
+
+    .hero-title,
+    .panel-title,
+    .state-title {
+        margin: 0.35rem 0 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        color: rgba(255, 250, 239, 0.96);
+    }
+
+    .hero-title {
+        font-size: clamp(2.5rem, 5vw, 4.1rem);
+        line-height: 0.96;
+    }
+
+    .panel-title,
+    .state-title {
+        font-size: clamp(1.55rem, 2vw, 2rem);
+        line-height: 1.04;
+    }
+
+    .hero-description,
+    .panel-caption,
+    .notice-copy,
+    .state-copy,
+    .empty-copy,
+    .section-note,
+    .signal-summary,
+    .signal-driver-detail,
+    .source-card-time,
+    .source-card-details,
+    .chart-subtitle {
+        margin: 0;
+        color: rgba(245, 239, 228, 0.62);
+        line-height: 1.55;
+    }
+
+    .hero-description {
+        margin-top: 1rem;
+        max-width: 34rem;
+        font-size: 0.98rem;
+    }
+
+    .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .meta-pill,
+    .refresh-button,
+    .notice-action,
+    .timeframe-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+    }
+
+    .meta-pill {
+        padding: 0.8rem 1rem;
+        color: rgba(249, 244, 236, 0.72);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .warning-pill {
+        color: rgba(255, 230, 179, 0.86);
+        border: 1px solid rgba(214, 181, 123, 0.18);
+    }
+
+    .live-pill {
+        position: relative;
+    }
+
+    .live-dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 999px;
+        background: rgba(34, 197, 94, 0.65);
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
+    }
+
+    .live-dot.is-busy {
+        background: rgba(214, 181, 123, 0.95);
+        animation: dashboard-pulse 1.3s ease-in-out infinite;
+    }
+
+    .refresh-button,
+    .notice-action {
+        padding: 0.82rem 1.1rem;
+        background: linear-gradient(180deg, rgba(214, 181, 123, 0.18), rgba(214, 181, 123, 0.1));
+        color: rgba(255, 247, 232, 0.95);
+        border: 1px solid rgba(214, 181, 123, 0.24);
+        cursor: pointer;
+        transition:
+            background-color 160ms ease,
+            border-color 160ms ease,
+            transform 160ms ease;
+    }
+
+    .refresh-button:hover,
+    .notice-action:hover,
+    .timeframe-btn:hover {
+        background: linear-gradient(180deg, rgba(214, 181, 123, 0.24), rgba(214, 181, 123, 0.14));
+        border-color: rgba(214, 181, 123, 0.34);
+        transform: translateY(-1px);
+    }
+
+    .refresh-button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .is-spinning {
+        animation: dashboard-spin 0.9s linear infinite;
+    }
+
+    .inline-notice,
+    .state-card,
+    .dashboard-panel,
+    .source-card,
+    .empty-card,
+    .signal-driver {
+        background: rgba(12, 11, 9, 0.8);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    .inline-notice {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid rgba(255,255,255,0.06);
-        background: rgba(0,0,0,0.3);
-        backdrop-filter: blur(12px);
-        position: sticky;
-        top: 0;
-        z-index: 10;
+        gap: 1rem;
+        border-radius: 1.25rem;
+        padding: 1rem 1.15rem;
+        margin-bottom: 1.4rem;
     }
 
-    .dash-header-left {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .dash-back {
-        color: rgba(255,255,255,0.4);
-        transition: color 0.15s;
-        display: flex;
-    }
-
-    .dash-back:hover {
-        color: #f59e0b;
-    }
-
-    .dash-title {
-        display: flex;
-        align-items: baseline;
-        gap: 0.5rem;
-        font-size: 1rem;
-        font-weight: 700;
-        margin: 0;
-    }
-
-    .dash-title-gradient {
-        background: linear-gradient(90deg, #f59e0b, #f8fafc);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
-    .dash-title-sub {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: rgba(255,255,255,0.35);
-    }
-
-    .dash-header-right {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .dash-updated,
-    .dash-status-text {
-        font-size: 0.65rem;
-        color: rgba(255,255,255,0.3);
-    }
-
-    .dash-warning-badge {
-        font-size: 0.6rem;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: rgba(245, 158, 11, 0.15);
-        color: #f59e0b;
-        cursor: help;
-        white-space: nowrap;
-    }
-
-    .dash-error-banner {
-        font-size: 0.75rem;
-        color: #fca5a5;
-        background: rgba(239, 68, 68, 0.1);
-        border-bottom: 1px solid rgba(239, 68, 68, 0.2);
-        padding: 0.5rem 1.5rem;
-        text-align: center;
-    }
-
-    .source-health-row {
-        max-width: 1100px;
-        margin: 0.85rem auto 0;
-        padding: 0 1.5rem;
+    .content-stack {
         display: grid;
+        gap: 1.4rem;
+    }
+
+    .dashboard-panel {
+        border-radius: 1.5rem;
+        padding: 1.5rem;
+    }
+
+    .panel-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0 0 1.2rem;
+        margin-bottom: 1.35rem;
+        border-width: 0 0 1px;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .panel-head-aligned-top {
+        align-items: flex-start;
+    }
+
+    .panel-caption {
+        max-width: 18rem;
+        text-align: right;
+        font-size: 0.9rem;
+    }
+
+    .source-grid,
+    .feature-grid,
+    .market-grid {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .source-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.75rem;
+    }
+
+    .feature-grid {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    }
+
+    .market-grid {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    }
+
+    .source-card,
+    .empty-card,
+    .state-card {
+        border-radius: 1.25rem;
+        padding: 1.15rem;
     }
 
     .source-card {
-        background: linear-gradient(180deg, rgba(13,17,23,0.88), rgba(13,17,23,0.62));
-        border: 1px solid color-mix(in srgb, var(--source-color) 32%, rgba(255,255,255,0.08));
-        border-radius: 14px;
-        padding: 0.85rem 0.95rem;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        border-color: color-mix(in srgb, var(--source-color, #d6b57b) 24%, rgba(214, 181, 123, 0.18));
+        background:
+            linear-gradient(180deg, rgba(18, 16, 12, 0.92), rgba(12, 11, 9, 0.82)),
+            radial-gradient(circle at top, color-mix(in srgb, var(--source-color, #d6b57b) 14%, transparent), transparent 52%);
     }
 
     .source-card-top {
@@ -549,7 +938,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.5rem;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.45rem;
     }
 
     .source-card-label {
@@ -557,7 +946,7 @@
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: rgba(255,255,255,0.55);
+        color: rgba(255, 255, 255, 0.55);
     }
 
     .source-card-status {
@@ -565,98 +954,147 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: var(--source-color);
+        color: var(--source-color, #d6b57b);
     }
 
-    .source-card-summary {
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: #f8fafc;
-        min-height: 2.3em;
+    .source-card-summary,
+    .empty-title {
+        margin: 0;
+        color: rgba(255, 249, 238, 0.94);
+        font-size: 0.98rem;
+        line-height: 1.35;
     }
 
     .source-card-time {
-        margin-top: 0.45rem;
-        font-size: 0.62rem;
-        color: rgba(255,255,255,0.35);
+        margin-top: 0.55rem;
+        font-size: 0.68rem;
     }
 
     .source-card-details {
-        margin-top: 0.55rem;
+        margin-top: 0.7rem;
         display: flex;
         flex-direction: column;
         gap: 0.25rem;
-        font-size: 0.65rem;
-        color: rgba(255,255,255,0.48);
+        font-size: 0.68rem;
     }
 
-    .dash-loading-state,
-    .dash-empty-state {
+    .signal-panel,
+    .cot-panel {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .signal-header {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        min-height: 55vh;
+        justify-content: flex-end;
+    }
+
+    .signal-score-row {
+        display: flex;
+        align-items: flex-start;
         gap: 1rem;
     }
 
-    .dash-loading-text {
-        font-size: 0.8rem;
-        color: rgba(255,255,255,0.35);
+    .signal-score {
+        font-size: clamp(2.5rem, 5vw, 4rem);
+        line-height: 0.95;
+        font-weight: 800;
+        color: rgba(255, 250, 242, 0.98);
+        min-width: 5rem;
+        letter-spacing: -0.05em;
     }
 
-    .dash-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto auto;
-        gap: 0.75rem;
-        padding: 1rem 1.5rem 2rem;
-        max-width: 1100px;
-        margin: 0 auto;
-    }
-
-    .dash-hero { grid-column: 1; grid-row: 1; }
-    .dash-chart { grid-column: 2; grid-row: 1; }
-    .dash-macro { grid-column: 1 / -1; grid-row: 2; }
-    .dash-cot { grid-column: 1; grid-row: 3; }
-    .dash-signal { grid-column: 2; grid-row: 3; }
-    .chart-panel,
-    .cot-panel,
-    .signal-panel {
-        background: rgba(13, 17, 23, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 1rem;
-        height: 100%;
-    }
-
-    .chart-panel {
+    .signal-score-meta {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.85rem;
+        gap: 0.65rem;
     }
 
-    .chart-panel-header {
+    .signal-badge,
+    .signal-confidence,
+    .cot-lag-tag,
+    .cot-stale-tag {
+        width: fit-content;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        padding: 0.42rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(214, 181, 123, 0.14);
+        text-transform: uppercase;
+    }
+
+    .signal-confidence {
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(245, 239, 228, 0.72);
+        letter-spacing: 0.08em;
+    }
+
+    .signal-score-track {
+        height: 0.5rem;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .signal-score-fill {
+        height: 100%;
+        border-radius: inherit;
+        box-shadow: 0 0 22px color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .signal-driver-list {
+        display: grid;
+        gap: 0.7rem;
+    }
+
+    .signal-driver {
+        border-radius: 1rem;
+        padding: 0.9rem 1rem;
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .signal-driver-top {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
     }
 
-    .chart-title,
-    .cot-title,
-    .signal-title {
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: rgba(255,255,255,0.4);
+    .signal-driver-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.78);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
+    }
+
+    .signal-driver-impact {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.45);
+    }
+
+    .signal-driver-up {
+        color: #22c55e;
+    }
+
+    .signal-driver-down {
+        color: #ef4444;
+    }
+
+    .chart-header-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.8rem;
     }
 
     .chart-subtitle {
-        margin-top: 0.25rem;
-        font-size: 0.65rem;
-        color: rgba(255,255,255,0.3);
+        font-size: 0.86rem;
+        text-align: right;
     }
 
     .timeframe-switcher {
@@ -667,47 +1105,43 @@
     }
 
     .timeframe-btn {
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(255,255,255,0.03);
-        color: rgba(255,255,255,0.5);
-        border-radius: 999px;
-        padding: 0.32rem 0.62rem;
-        font-size: 0.62rem;
+        border: 1px solid rgba(214, 181, 123, 0.14);
+        background: rgba(255, 255, 255, 0.03);
+        color: rgba(255, 255, 255, 0.58);
+        padding: 0.48rem 0.82rem;
+        font-size: 0.7rem;
         font-weight: 700;
-        letter-spacing: 0.04em;
-        transition: 0.16s ease;
+        letter-spacing: 0.08em;
         cursor: pointer;
-    }
-
-    .timeframe-btn:hover {
-        color: #f8fafc;
-        border-color: rgba(245,158,11,0.24);
+        transition:
+            border-color 160ms ease,
+            color 160ms ease,
+            background-color 160ms ease,
+            transform 160ms ease;
     }
 
     .timeframe-btn-active {
-        background: rgba(245,158,11,0.14);
-        color: #f59e0b;
-        border-color: rgba(245,158,11,0.32);
+        background: rgba(214, 181, 123, 0.14);
+        color: rgba(255, 236, 205, 0.96);
+        border-color: rgba(214, 181, 123, 0.3);
     }
 
     .cot-body {
         display: flex;
         align-items: center;
         gap: 1rem;
-        flex: 1;
-        margin-top: 0.6rem;
     }
 
     .cot-gauge-svg {
-        width: 100px;
-        height: 60px;
+        width: 120px;
+        height: 72px;
         flex-shrink: 0;
     }
 
     .cot-metrics {
         display: flex;
         flex-direction: column;
-        gap: 0.35rem;
+        gap: 0.45rem;
         flex: 1;
     }
 
@@ -719,39 +1153,45 @@
     }
 
     .cot-metric-label {
-        font-size: 0.65rem;
-        color: rgba(255,255,255,0.35);
+        font-size: 0.68rem;
+        color: rgba(255, 255, 255, 0.4);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
     }
 
     .cot-metric-value {
-        font-size: 0.8rem;
+        font-size: 0.9rem;
         font-weight: 600;
         color: #f8fafc;
         font-variant-numeric: tabular-nums;
     }
 
-    .cot-up { color: #22c55e; }
-    .cot-down { color: #ef4444; }
-    .cot-classification { color: #f59e0b; }
+    .cot-up {
+        color: #22c55e;
+    }
+
+    .cot-down {
+        color: #ef4444;
+    }
+
+    .cot-classification {
+        color: #f59e0b;
+    }
 
     .cot-report-date {
-        margin-top: 0.7rem;
-        font-size: 0.58rem;
-        color: rgba(255,255,255,0.25);
+        margin-top: 0.3rem;
+        font-size: 0.64rem;
+        color: rgba(255, 255, 255, 0.32);
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 0.35rem;
+        gap: 0.4rem;
     }
 
-    .cot-lag-tag,
-    .cot-stale-tag,
-    .signal-confidence {
-        font-size: 0.55rem;
-        padding: 2px 6px;
-        border-radius: 999px;
+    .cot-lag-tag {
         background: rgba(255, 255, 255, 0.06);
-        color: rgba(255,255,255,0.55);
+        color: rgba(255, 255, 255, 0.62);
+        letter-spacing: 0.04em;
     }
 
     .cot-stale {
@@ -761,188 +1201,213 @@
     .cot-stale-tag {
         background: rgba(245, 158, 11, 0.15);
         color: #f59e0b;
+        letter-spacing: 0.04em;
     }
 
-    .cot-empty {
-        font-size: 0.75rem;
-        color: rgba(255,255,255,0.3);
-        text-align: center;
-        padding: 2rem;
+    .section-note {
+        margin-bottom: 1rem;
+        font-size: 0.92rem;
     }
 
-    .signal-panel {
+    .empty-card,
+    .state-card {
+        display: grid;
+        gap: 0.8rem;
+    }
+
+    .compact-empty-card {
+        min-height: 100%;
+        align-content: center;
+    }
+
+    .state-shell {
         display: flex;
-        flex-direction: column;
-        gap: 0.85rem;
+        justify-content: center;
+        padding-top: 1rem;
     }
 
-    .signal-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
+    .state-card {
+        max-width: 34rem;
+        width: 100%;
     }
 
-    .signal-score-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.9rem;
+    .skeleton-line,
+    .skeleton-badge,
+    .skeleton-pill,
+    .skeleton-chart-grid::before,
+    .skeleton-chart-grid::after {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(214, 181, 123, 0.18));
     }
 
-    .signal-score {
-        font-size: 2.5rem;
-        line-height: 1;
-        font-weight: 800;
-        color: #f8fafc;
-        min-width: 4rem;
-    }
-
-    .signal-score-meta {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 0.55rem;
-    }
-
-    .signal-badge {
-        width: fit-content;
-        font-size: 0.85rem;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        padding: 0.42rem 0.7rem;
-        border-radius: 10px;
-        border: 1px solid;
-    }
-
-    .signal-summary {
-        font-size: 0.76rem;
-        color: rgba(255,255,255,0.55);
-        line-height: 1.5;
-    }
-
-    .signal-score-track {
-        height: 6px;
-        background: rgba(255,255,255,0.07);
+    .skeleton-line {
+        height: 0.72rem;
         border-radius: 999px;
+    }
+
+    .skeleton-line-short {
+        width: 7rem;
+    }
+
+    .skeleton-line-medium {
+        width: 12rem;
+    }
+
+    .skeleton-line-caption {
+        width: 10rem;
+    }
+
+    .skeleton-line-value {
+        width: 6rem;
+        height: 2.2rem;
+    }
+
+    .skeleton-card {
+        pointer-events: none;
+        min-height: 9.5rem;
+    }
+
+    .skeleton-panel-body {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .skeleton-badge {
+        width: 2.8rem;
+        height: 2.8rem;
+        border-radius: 999px;
+    }
+
+    .skeleton-pill {
+        width: 3rem;
+        height: 2rem;
+        border-radius: 999px;
+    }
+
+    .chart-skeleton {
+        height: 16rem;
+        border-radius: 1.2rem;
         overflow: hidden;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(214, 181, 123, 0.08);
     }
 
-    .signal-score-fill {
+    .compact-chart-skeleton {
+        height: 12rem;
+    }
+
+    .skeleton-chart-grid {
+        position: relative;
+        width: 100%;
         height: 100%;
+    }
+
+    .skeleton-chart-grid::before,
+    .skeleton-chart-grid::after {
+        content: "";
+        position: absolute;
+        inset: 18% 8%;
+        border-radius: 1rem;
+        opacity: 0.2;
+    }
+
+    .skeleton-chart-grid::after {
+        inset: auto 10% 18% 10%;
+        height: 0.3rem;
         border-radius: 999px;
+        opacity: 0.28;
     }
 
-    .signal-driver-list {
+    .macro-skeleton {
         display: flex;
-        flex-direction: column;
-        gap: 0.6rem;
-    }
-
-    .signal-driver {
-        padding: 0.7rem 0.75rem;
-        border-radius: 10px;
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.05);
-    }
-
-    .signal-driver-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        flex-wrap: wrap;
         gap: 0.75rem;
     }
 
-    .signal-driver-label {
-        font-size: 0.7rem;
-        font-weight: 700;
-        color: rgba(255,255,255,0.78);
+    .macro-skeleton-pill {
+        width: 7rem;
     }
 
-    .signal-driver-impact {
-        font-size: 0.68rem;
-        font-weight: 700;
-        color: rgba(255,255,255,0.45);
+    @keyframes dashboard-spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
-    .signal-driver-up {
-        color: #22c55e;
-    }
-
-    .signal-driver-down {
-        color: #ef4444;
-    }
-
-    .signal-driver-detail {
-        margin-top: 0.35rem;
-        font-size: 0.68rem;
-        color: rgba(255,255,255,0.45);
-    }
-
-    .dash-loading {
-        opacity: 0.5;
-    }
-
-    @media (max-width: 900px) {
-        .source-health-row {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+    @keyframes dashboard-pulse {
+        0%,
+        100% {
+            box-shadow: 0 0 0 0 rgba(214, 181, 123, 0.28);
         }
 
-        .chart-panel-header,
-        .signal-header {
+        50% {
+            box-shadow: 0 0 0 8px rgba(214, 181, 123, 0);
+        }
+    }
+
+    @media (max-width: 960px) {
+        .dashboard-container {
+            padding: 2rem 1.25rem 3rem;
+        }
+
+        .dashboard-hero,
+        .panel-head,
+        .inline-notice {
+            align-items: flex-start;
             flex-direction: column;
+        }
+
+        .hero-actions,
+        .chart-header-actions,
+        .timeframe-switcher {
+            width: 100%;
+        }
+
+        .hero-actions,
+        .chart-header-actions {
+            justify-content: flex-start;
             align-items: flex-start;
         }
 
-        .timeframe-switcher {
-            justify-content: flex-start;
+        .panel-caption,
+        .chart-subtitle {
+            max-width: none;
+            text-align: left;
+        }
+
+        .source-grid,
+        .feature-grid,
+        .market-grid {
+            grid-template-columns: 1fr;
         }
     }
 
-    @media (max-width: 768px) {
-        .dash-header {
-            padding: 0.9rem 1rem;
+    @media (max-width: 640px) {
+        .dashboard-container {
+            padding-inline: 1rem;
         }
 
-        .dash-header-right {
-            gap: 0.45rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+        .dashboard-panel,
+        .state-card {
+            padding: 1.1rem;
         }
 
-        .source-health-row {
-            padding: 0 0.75rem;
+        .source-card {
+            padding: 1rem;
         }
 
-        .dash-grid {
-            grid-template-columns: 1fr;
-            padding: 0.75rem 0.75rem 1.5rem;
-        }
-
-        .dash-hero,
-        .dash-chart,
-        .dash-macro,
-        .dash-cot,
-        .dash-signal {
-            grid-column: 1;
-            grid-row: auto;
-        }
-
-        .signal-score-row {
+        .signal-score-row,
+        .cot-body {
             flex-direction: column;
+            align-items: flex-start;
         }
 
         .signal-score {
             min-width: 0;
         }
-    }
 
-    @media (max-width: 560px) {
-        .source-health-row {
-            grid-template-columns: 1fr;
-        }
-
-        .source-card-summary {
-            min-height: 0;
+        .cot-gauge-svg {
+            width: 100%;
+            max-width: 140px;
         }
     }
 </style>
