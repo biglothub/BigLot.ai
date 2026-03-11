@@ -777,10 +777,41 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;</code></pre>
                 class="prompt-textarea"
             ></textarea>
 
-            {#if isGenerating}
-                <div class="flex items-center gap-2">
-                    <Loader2 size={12} class="spin text-white/30 shrink-0" />
-                    <span class="text-xs text-white/40">{progress.currentStep || 'Generating...'}</span>
+            {#if displayedLogs.length > 0 && !isReady}
+                <div class="agent-timeline">
+                    <div class="timeline-thread"></div>
+
+                    {#each displayedLogs as log, i}
+                        {@const isLast = i === displayedLogs.length - 1}
+                        {@const isActive = isLast && isGenerating}
+                        {@const isComplete = !isActive}
+                        {@const isSuccess = showFinalSuccess && isLast}
+
+                        <div
+                            class="timeline-step"
+                            class:step-active={isActive}
+                            class:step-complete={isComplete}
+                            class:step-success={isSuccess}
+                        >
+                            <div class="timeline-dot">
+                                {#if isSuccess}
+                                    <Check size={8} strokeWidth={3} />
+                                {:else if isActive}
+                                    <div class="dot-ping"></div>
+                                {:else}
+                                    <div class="dot-filled"></div>
+                                {/if}
+                            </div>
+                            <span class="timeline-label">{log.message}</span>
+                        </div>
+                    {/each}
+
+                    {#if showFinalSuccess}
+                        <div class="timeline-success">
+                            <Check size={12} strokeWidth={2.5} />
+                            <span>Indicator ready</span>
+                        </div>
+                    {/if}
                 </div>
             {/if}
 
@@ -1364,5 +1395,122 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;</code></pre>
         position: absolute;
         top: 0.5rem;
         right: 0.5rem;
+    }
+
+    /* Agent thinking timeline */
+    .agent-timeline {
+        position: relative;
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.06) transparent;
+    }
+    .agent-timeline::-webkit-scrollbar { width: 4px; }
+    .agent-timeline::-webkit-scrollbar-track { background: transparent; }
+    .agent-timeline::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 2px; }
+
+    .timeline-thread {
+        position: absolute;
+        left: 5px;
+        top: 4px;
+        bottom: 4px;
+        width: 1px;
+        background: linear-gradient(to bottom, rgba(251, 191, 36, 0.2), rgba(251, 191, 36, 0.06));
+        border-radius: 1px;
+    }
+
+    .timeline-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0;
+        position: relative;
+        animation: step-enter 0.4s ease-out both;
+    }
+
+    .timeline-dot {
+        position: absolute;
+        left: -20px;
+        width: 11px;
+        height: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .dot-filled {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: rgba(251, 191, 36, 0.3);
+        transition: background 0.3s;
+    }
+
+    .dot-ping {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #fbbf24;
+        box-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
+        animation: gold-pulse 1.5s ease-in-out infinite;
+    }
+
+    .timeline-label {
+        font-size: 11px;
+        font-family: var(--font-sans);
+        letter-spacing: 0.01em;
+        font-weight: 450;
+        line-height: 1.3;
+    }
+
+    .step-active .timeline-label {
+        color: rgba(255, 255, 255, 0.75);
+    }
+
+    .step-complete .timeline-label {
+        color: rgba(255, 255, 255, 0.32);
+    }
+
+    .step-success .dot-filled {
+        background: #00d4aa;
+    }
+
+    .step-success .timeline-label {
+        color: rgba(0, 212, 170, 0.7);
+    }
+
+    .step-success :global(svg) {
+        color: #00d4aa;
+    }
+
+    .timeline-success {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(0, 212, 170, 0.06);
+        border: 1px solid rgba(0, 212, 170, 0.12);
+        color: #00d4aa;
+        font-size: 11.5px;
+        font-weight: 550;
+        letter-spacing: 0.015em;
+        animation: step-enter 0.4s ease-out both;
+    }
+
+    @keyframes step-enter {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes gold-pulse {
+        0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.3); transform: scale(1); }
+        50% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); transform: scale(1.3); }
     }
 </style>
