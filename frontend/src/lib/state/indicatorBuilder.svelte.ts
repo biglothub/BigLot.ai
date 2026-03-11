@@ -45,12 +45,40 @@ class IndicatorBuilderState {
                 ]
             };
 
+            const controller = new AbortController();
+            const fetchTimeout = setTimeout(() => controller.abort(), 150_000);
+
+            const progressMsgs = [
+                'Analyzing prompt and matching reference patterns...',
+                'Generating PineScript v6 indicator code...',
+                'Building JavaScript preview module...',
+                'Validating and auto-correcting output...',
+            ];
+            let msgIdx = 0;
+            const progressInterval = setInterval(() => {
+                if (msgIdx < progressMsgs.length) {
+                    this.progress = {
+                        ...this.progress,
+                        currentStep: progressMsgs[msgIdx],
+                        activityLog: [
+                            ...(this.progress.activityLog ?? []),
+                            this.createSystemLog(progressMsgs[msgIdx])
+                        ]
+                    };
+                    msgIdx++;
+                }
+            }, 8_000);
+
             const res = await fetch('/api/engine', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt
-                })
+                }),
+                signal: controller.signal
+            }).finally(() => {
+                clearTimeout(fetchTimeout);
+                clearInterval(progressInterval);
             });
 
             if (!res.ok) {
@@ -107,12 +135,15 @@ class IndicatorBuilderState {
             }
 
         } catch (err: any) {
+            const message = err.name === 'AbortError'
+                ? 'Generation timed out. Try a simpler prompt or try again.'
+                : (err.message || 'Something went wrong');
             this.progress = {
                 status: 'error',
-                error: err.message || 'Something went wrong',
+                error: message,
                 activityLog: [
                     ...(this.progress.activityLog ?? []),
-                    this.createSystemLog(`${err.message || 'Something went wrong'}`)
+                    this.createSystemLog(message)
                 ]
             };
         }
