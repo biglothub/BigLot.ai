@@ -1,4 +1,3 @@
-import { supabase } from '$lib/supabase';
 import { parseSSEStream } from '$lib/utils/sseParser';
 import { applyDiscussionStreamEvent } from './discussionStream';
 import type {
@@ -410,45 +409,19 @@ class ChatState {
 
     // Load list of chats for sidebar
     async loadAllChats() {
-        let data: Chat[] | null = null;
-        let error: { message: string } | null = null;
-
-        ({ data, error } = await supabase
-            .from('chats')
-            .select('*')
-            .eq('biglot_user_id', this.biglotUserId)
-            .order('created_at', { ascending: false }));
-
-        // Backward compatibility for older schema without biglot_user_id.
-        if (error && typeof error.message === 'string' && /biglot_user_id/i.test(error.message)) {
-            ({ data, error } = await supabase
-                .from('chats')
-                .select('*')
-                .order('created_at', { ascending: false }));
-        }
-
-        if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
-            ({ data, error } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('biglot_user_id', this.biglotUserId));
-
-            if (error && /biglot_user_id/i.test(error.message)) {
-                ({ data, error } = await supabase
-                    .from('chats')
-                    .select('*'));
+        try {
+            const response = await fetch(`/api/chats?biglotUserId=${encodeURIComponent(this.biglotUserId)}`);
+            if (!response.ok) {
+                const message = await readApiError(response, 'Failed to load chats');
+                throw new Error(message);
             }
-        }
 
-        if (error) {
-            console.error('Error loading chats:', error);
-            this.lastDbError = error.message ?? 'Failed to load chats';
-            return;
-        }
-
-        if (data) {
-            this.allChats = data;
+            const data = (await response.json()) as { chats?: Chat[] };
+            this.allChats = data.chats ?? [];
             this.lastDbError = null;
+        } catch (error) {
+            console.error('Error loading chats:', error);
+            this.lastDbError = error instanceof Error ? error.message : 'Failed to load chats';
         }
     }
 
@@ -458,30 +431,18 @@ class ChatState {
         this.lastDbError = null;
 
         try {
-            let data: JsonObject[] | null = null;
-            let error: { message: string } | null = null;
-
-            ({ data, error } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('chat_id', chatId)
-                .order('created_at', { ascending: true }));
-
-            if (error && typeof error.message === 'string' && error.message.includes('created_at')) {
-                ({ data, error } = await supabase
-                    .from('messages')
-                    .select('*')
-                    .eq('chat_id', chatId));
+            const response = await fetch(
+                `/api/chats/${encodeURIComponent(chatId)}?biglotUserId=${encodeURIComponent(this.biglotUserId)}`
+            );
+            if (!response.ok) {
+                const message = await readApiError(response, 'Failed to load chat');
+                throw new Error(message);
             }
 
-            if (error) {
-                console.error('Error loading chat messages:', error);
-                this.lastDbError = error.message ?? 'Failed to load chat';
-                throw new Error(this.lastDbError ?? 'Failed to load chat');
-            }
+            const payload = (await response.json()) as { messages?: JsonObject[] };
 
             this.currentChatId = chatId;
-            this.messages = (data ?? []).flatMap((row) => {
+            this.messages = (payload.messages ?? []).flatMap((row) => {
                 const message = parseStoredMessageRow(row);
                 return message ? [message] : [];
             });
@@ -493,20 +454,31 @@ class ChatState {
     async newChat() {
         this.messages = [];
         this.currentChatId = null;
+        this.lastDbError = null;
     }
 
     async deleteChat(chatId: string) {
-        const { error } = await supabase.from('chats').delete().eq('id', chatId);
+        try {
+            const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ biglotUserId: this.biglotUserId })
+            });
 
-        if (error) {
+            if (!response.ok) {
+                const message = await readApiError(response, 'Failed to delete chat');
+                throw new Error(message);
+            }
+
+            this.allChats = this.allChats.filter((c) => c.id !== chatId);
+            this.lastDbError = null;
+
+            if (this.currentChatId === chatId) {
+                this.newChat();
+            }
+        } catch (error) {
             console.error('Error deleting chat:', error);
-            return;
-        }
-
-        this.allChats = this.allChats.filter((c) => c.id !== chatId);
-
-        if (this.currentChatId === chatId) {
-            this.newChat();
+            this.lastDbError = error instanceof Error ? error.message : 'Failed to delete chat';
         }
     }
 
@@ -520,42 +492,9 @@ class ChatState {
         }
 
         const modeUsed = this.agentMode;
-
-        // 1. Create chat session in Supabase if it doesn't exist.
-        if (!this.currentChatId) {
-            const titleText = content || fileAttachment?.name || 'Image Analysis';
-            let data: Chat | null = null;
-            let error: { message: string } | null = null;
-
-            ({ data, error } = await supabase
-                .from('chats')
-                .insert({
-                    title: titleText.slice(0, 30) + (titleText.length > 30 ? '...' : ''),
-                    biglot_user_id: this.biglotUserId
-                })
-                .select()
-                .single());
-
-            if (error && typeof error.message === 'string' && /biglot_user_id/i.test(error.message)) {
-                ({ data, error } = await supabase
-                    .from('chats')
-                    .insert({ title: titleText.slice(0, 30) + (titleText.length > 30 ? '...' : '') })
-                    .select()
-                    .single());
-            }
-
-            if (error || !data) {
-                console.error('Error creating chat:', error);
-                return;
-            }
-
-            this.currentChatId = data.id;
-            this.allChats = [data, ...this.allChats];
-        }
-
         const chatId = this.currentChatId;
 
-        // 2. Add and save user message.
+        // Optimistically add the user message before the server persists it.
         const userMsg: Message = {
             role: 'user',
             content,
@@ -567,57 +506,7 @@ class ChatState {
         this.messages.push(userMsg);
         this.selectedImage = null;
         this.selectedFile = null;
-
-        {
-            const basePayload: Record<string, unknown> = {
-                chat_id: chatId,
-                role: 'user',
-                content,
-                channel: 'web'
-            };
-            if (imageUrl) basePayload.image_url = imageUrl;
-            if (fileAttachment?.name) basePayload.file_name = fileAttachment.name;
-            basePayload.mode = modeUsed;
-
-            let payload = { ...basePayload };
-            let insertError: { message: string } | null = null;
-
-            for (let i = 0; i < 4; i += 1) {
-                const { error } = await supabase.from('messages').insert(payload);
-                if (!error) {
-                    insertError = null;
-                    break;
-                }
-
-                insertError = error;
-
-                if (/image_url/i.test(error.message)) {
-                    delete payload.image_url;
-                    continue;
-                }
-                if (/file_name/i.test(error.message)) {
-                    delete payload.file_name;
-                    continue;
-                }
-                if (/\bmode\b/i.test(error.message)) {
-                    delete payload.mode;
-                    continue;
-                }
-                if (/\bchannel\b/i.test(error.message)) {
-                    delete payload.channel;
-                    continue;
-                }
-
-                break;
-            }
-
-            if (insertError) {
-                console.error('Error saving user message:', insertError);
-                this.lastDbError = insertError.message ?? 'Failed to save message';
-            } else {
-                this.lastDbError = null;
-            }
-        }
+        this.lastDbError = null;
 
         this.isLoading = true;
 
@@ -651,7 +540,10 @@ class ChatState {
                 signal: this.abortController.signal
             });
 
-            if (!response.ok) throw new Error('Failed to fetch');
+            if (!response.ok) {
+                const message = await readApiError(response, 'Failed to fetch');
+                throw new Error(message);
+            }
             if (!response.body) throw new Error('No response body');
 
             // Add empty assistant message
@@ -676,6 +568,33 @@ class ChatState {
                 }
 
                 switch (event.event) {
+                    case 'chat_created': {
+                        if (typeof data.chatId !== 'string') {
+                            break;
+                        }
+
+                        const title =
+                            typeof data.title === 'string' && data.title.trim().length > 0
+                                ? data.title
+                                : content || fileAttachment?.name || 'New Chat';
+                        this.currentChatId = data.chatId;
+                        const existingIndex = this.allChats.findIndex((chat) => chat.id === data.chatId);
+                        const nextChat: Chat = {
+                            id: data.chatId,
+                            title,
+                            created_at: new Date().toISOString()
+                        };
+
+                        if (existingIndex >= 0) {
+                            this.allChats = [
+                                nextChat,
+                                ...this.allChats.filter((chat) => chat.id !== data.chatId)
+                            ];
+                        } else {
+                            this.allChats = [nextChat, ...this.allChats];
+                        }
+                        break;
+                    }
                     case 'run_start': {
                         this.messages[msgIdx].runId = typeof data.runId === 'string' ? data.runId : null;
                         this.messages[msgIdx].routeType = isAgentRouteType(data.routeType) ? data.routeType : undefined;
@@ -740,6 +659,19 @@ class ChatState {
                             if (toolCall.status === 'running') toolCall.status = 'error';
                         }
                         this.messages[msgIdx].toolCalls = [...runningTools];
+                        const errorMsg = typeof data.message === 'string' ? data.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
+                        this.lastDbError = errorMsg;
+                        const hasErrorBlock = allBlocks.some(
+                            (block) => block.type === 'error' && block.message === errorMsg
+                        );
+                        if (!hasErrorBlock) {
+                            allBlocks = [...allBlocks, { type: 'error', message: errorMsg, tool: 'chat' }];
+                            this.messages[msgIdx].contentBlocks = [...allBlocks];
+                        }
+                        if (!fullText) {
+                            fullText = `⚠️ ${errorMsg}`;
+                            this.messages[msgIdx].content = fullText;
+                        }
                         break;
                     }
                     case 'plan_create': {
@@ -898,6 +830,9 @@ class ChatState {
                         break;
                     }
                     case 'done': {
+                        if (typeof data.messageId === 'string') {
+                            this.messages[msgIdx].id = data.messageId;
+                        }
                         if (typeof data.runId === 'string') {
                             this.messages[msgIdx].runId = data.runId;
                         }
@@ -912,71 +847,6 @@ class ChatState {
                         }
                         break;
                     }
-                }
-            }
-
-            // 3. Save assistant message after stream finishes.
-            {
-                const finalBlocks = this.messages[msgIdx].contentBlocks;
-                let payload: Record<string, unknown> = {
-                    chat_id: chatId,
-                    role: 'assistant',
-                    content: fullText,
-                    mode: modeUsed,
-                    channel: 'web'
-                };
-
-                // Include content_blocks if we have structured data
-                if (finalBlocks && finalBlocks.length > 0) {
-                    payload.content_blocks = finalBlocks;
-                }
-                if (this.messages[msgIdx].runId) {
-                    payload.run_id = this.messages[msgIdx].runId;
-                }
-
-                let insertError: { message: string } | null = null;
-                let insertedId: string | undefined;
-
-                for (let i = 0; i < 4; i += 1) {
-                    const { data, error } = await supabase
-                        .from('messages')
-                        .insert(payload)
-                        .select('id')
-                        .single();
-                    if (!error) {
-                        insertedId = typeof data?.id === 'string' ? data.id : undefined;
-                        insertError = null;
-                        break;
-                    }
-
-                    insertError = error;
-                    if (/content_blocks/i.test(error.message)) {
-                        delete payload.content_blocks;
-                        continue;
-                    }
-                    if (/\bmode\b/i.test(error.message)) {
-                        delete payload.mode;
-                        continue;
-                    }
-                    if (/\bchannel\b/i.test(error.message)) {
-                        delete payload.channel;
-                        continue;
-                    }
-                    if (/run_id/i.test(error.message)) {
-                        delete payload.run_id;
-                        continue;
-                    }
-                    break;
-                }
-
-                if (insertError) {
-                    console.error('Error saving assistant message:', insertError);
-                    this.lastDbError = insertError.message ?? 'Failed to save assistant message';
-                } else {
-                    if (insertedId) {
-                        this.messages[msgIdx].id = insertedId;
-                    }
-                    this.lastDbError = null;
                 }
             }
         } catch (error) {
@@ -996,12 +866,14 @@ class ChatState {
                 }
             } else {
                 console.error(error);
+                const errorMessage = error instanceof Error ? error.message : 'Sorry, I encountered an error.';
                 const last = this.messages[this.messages.length - 1];
                 if (last?.role === 'assistant' && last.content === '' && (!last.contentBlocks || last.contentBlocks.length === 0)) {
-                    last.content = 'Sorry, I encountered an error.';
+                    last.content = `⚠️ ${errorMessage}`;
                 } else if (!last || last.role !== 'assistant') {
-                    this.messages.push({ role: 'assistant', content: 'Sorry, I encountered an error.', channel: 'web' });
+                    this.messages.push({ role: 'assistant', content: `⚠️ ${errorMessage}`, channel: 'web' });
                 }
+                this.lastDbError = errorMessage;
             }
         } finally {
             this.abortController = null;

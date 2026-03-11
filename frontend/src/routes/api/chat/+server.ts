@@ -15,6 +15,13 @@ import {
 	upsertAgentStepRun
 } from '$lib/server/agentObservability.server';
 import { classifyChatRoute, shouldEnablePlanning } from '$lib/server/chatRouting.server';
+import {
+	buildChatTitle,
+	createChatRecord,
+	deleteChatRecord,
+	saveChatMessage,
+	validateBiglotUserId
+} from '$lib/server/chatPersistence.server';
 import { getMemoryContext } from '$lib/server/memory.server';
 import { runWithMemoryToolUserId } from '$lib/server/tools/memory.tool';
 import type { AgentRouteType, ContentBlock, ResearchReportBlock, ResearchSection } from '$lib/types/contentBlock';
@@ -125,9 +132,15 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		return json({ error: '`messages` must be an array' }, { status: 400 });
 	}
 
-	const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
-	const biglotUserId = typeof payload.biglotUserId === 'string' ? payload.biglotUserId : null;
+	const initialChatId = typeof payload.chatId === 'string' ? payload.chatId : null;
+	const rawBiglotUserId = typeof payload.biglotUserId === 'string' ? payload.biglotUserId : null;
 	const botId = typeof payload.botId === 'string' ? payload.botId : null;
+	let biglotUserId: string;
+	try {
+		biglotUserId = validateBiglotUserId(rawBiglotUserId);
+	} catch {
+		return json({ error: 'Invalid biglotUserId' }, { status: 400 });
+	}
 
 	const MAX_MESSAGES = 50;
 	const MAX_CHARS = 8000;
@@ -183,8 +196,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					? 'research'
 					: 'normal';
 	const latestUserMessage = [...safeMessages].reverse().find((message) => message.role === 'user');
+	if (!latestUserMessage) {
+		return json({ error: 'At least one user message is required' }, { status: 400 });
+	}
 	const lastUserMessage = latestUserMessage?.content ?? '';
 	const hasImageInput = safeMessages.some((message) => message.role === 'user' && !!message.image_url);
+	const pendingChatTitle = buildChatTitle({
+		content: latestUserMessage.content,
+		fileName: latestUserMessage.file_name,
+		hasImage: hasImageInput
+	});
 	const routeType: AgentRouteType =
 		chatMode === 'discussion'
 			? 'discussion'
@@ -234,7 +255,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	}
 
 	// Fetch user memory context for personalization
-	const memoryContext = biglotUserId ? await getMemoryContext(biglotUserId).catch(() => null) : null;
+	const memoryContext = await getMemoryContext(biglotUserId).catch(() => null);
 
     // Build formatted messages for OpenAI
 	const formattedMessages: ChatCompletionMessageParam[] = [
@@ -283,38 +304,97 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		})
 	];
 
+	let effectiveChatId = initialChatId;
+	let createdChat: { id: string; title: string | null } | null = null;
+	try {
+		if (!effectiveChatId) {
+			const chat = await createChatRecord({
+				biglotUserId,
+				title: pendingChatTitle
+			});
+			effectiveChatId = chat.id;
+			createdChat = { id: chat.id, title: chat.title };
+		}
+
+		if (!effectiveChatId) {
+			throw new Error('Failed to create chat');
+		}
+
+		await saveChatMessage({
+			chatId: effectiveChatId,
+			biglotUserId,
+			role: 'user',
+			content: latestUserMessage.content,
+			imageUrl: latestUserMessage.image_url,
+			fileName: latestUserMessage.file_name,
+			mode,
+			channel: 'web'
+		});
+	} catch (error) {
+		if (createdChat) {
+			await Promise.resolve(deleteChatRecord({ chatId: createdChat.id, biglotUserId })).catch(() => null);
+		}
+
+		return json(
+			{
+				error: error instanceof Error ? error.message : 'Failed to save user message'
+			},
+			{ status: 500, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': runModelLabel } }
+		);
+	}
+	if (!effectiveChatId) {
+		return json(
+			{ error: 'Failed to create chat' },
+			{ status: 500, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': runModelLabel } }
+		);
+	}
+	const activeChatId = effectiveChatId;
+
     // SSE streaming
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
         async start(controller) {
             let runId: string | null = null;
+            let runIdPromise: Promise<string | null> | null = null;
             let planUsed = false;
             let toolCallCount = 0;
             let streamedText = '';
+            let assistantMessageId: string | undefined;
+            let finalContentBlocks: ContentBlock[] = [];
             const toolStarts = new Map<string, { name: string; args: Record<string, unknown>; startedAt: number }>();
 
-            // Fire createAgentRun non-blocking so SSE stream starts immediately
-            const runIdPromise = createAgentRun({
-                chatId,
-                biglotUserId,
-                mode,
-                chatMode,
-                routeType,
-                provider: runProviderLabel,
-                model: runModelLabel,
-                clientIp,
-                messageCount: safeMessages.length,
-                hasImageInput,
-                lastUserMessage
-            }).then((id) => {
-                runId = id;
-                if (id) {
-                    controller.enqueue(encoder.encode(sseEvent('run_id', { runId: id })));
-                }
-                return id;
-            }).catch(() => null);
-
             try {
+                if (createdChat) {
+                    controller.enqueue(
+                        encoder.encode(
+                            sseEvent('chat_created', {
+                                chatId: createdChat.id,
+                                title: createdChat.title ?? pendingChatTitle
+                            })
+                        )
+                    );
+                }
+
+                runIdPromise = createAgentRun({
+                    chatId: activeChatId,
+                    biglotUserId,
+                    mode,
+                    chatMode,
+                    routeType,
+                    provider: runProviderLabel,
+                    model: runModelLabel,
+                    clientIp,
+                    messageCount: safeMessages.length,
+                    hasImageInput,
+                    lastUserMessage
+                }).then((id) => {
+                    runId = id;
+                    if (id) {
+                        controller.enqueue(encoder.encode(sseEvent('run_id', { runId: id })));
+                    }
+                    return id;
+                }).catch(() => null);
+
                 controller.enqueue(
                     encoder.encode(
                         sseEvent('run_start', {
@@ -335,7 +415,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     const { client, apiModel } = clientBundle;
 
                     // Agent / Research mode: GPT-4o with tool calling via agent loop
-                    const allBlocks: ContentBlock[] = [];
+                    const allBlocks = finalContentBlocks;
 
                     const researchStartTime = Date.now();
 
@@ -388,7 +468,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 									void logToolExecution({
 										runId,
-										chatId,
+										chatId: activeChatId,
 										toolCallId,
 										toolName: tool,
 										toolArgs: started?.args ?? {},
@@ -461,7 +541,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         controller.enqueue(encoder.encode(sseEvent('research_report', { report })));
                     }
 
-                    await runIdPromise;
+                    if (runIdPromise) {
+                        await runIdPromise;
+                    }
                     if (runId) {
                         await updateAgentRun({
                             runId,
@@ -472,7 +554,41 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         });
                     }
 
-                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: allBlocks })));
+                    try {
+                        const persisted = await saveChatMessage({
+                            chatId: activeChatId,
+                            biglotUserId,
+                            role: 'assistant',
+                            content: streamedText,
+                            mode,
+                            channel: 'web',
+                            runId,
+                            contentBlocks: allBlocks
+                        });
+                        assistantMessageId = persisted.id;
+                    } catch (persistError) {
+                        controller.enqueue(
+                            encoder.encode(
+                                sseEvent('error', {
+                                    message:
+                                        persistError instanceof Error
+                                            ? persistError.message
+                                            : 'Failed to save assistant message'
+                                })
+                            )
+                        );
+                    }
+
+                    controller.enqueue(
+                        encoder.encode(
+                            sseEvent('done', {
+                                runId,
+                                routeType,
+                                contentBlocks: allBlocks,
+                                messageId: assistantMessageId
+                            })
+                        )
+                    );
                 } else if (chatMode === 'discussion') {
                     // Discussion mode: 3 AI panelists debate
                     const discussionBlocks = await runDiscussionLoop({
@@ -518,8 +634,11 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                             }
                         }
                     });
+                    finalContentBlocks = discussionBlocks;
 
-                    await runIdPromise;
+                    if (runIdPromise) {
+                        await runIdPromise;
+                    }
                     if (runId) {
                         await updateAgentRun({
                             runId,
@@ -530,7 +649,41 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         });
                     }
 
-                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: discussionBlocks })));
+                    try {
+                        const persisted = await saveChatMessage({
+                            chatId: activeChatId,
+                            biglotUserId,
+                            role: 'assistant',
+                            content: streamedText,
+                            mode,
+                            channel: 'web',
+                            runId,
+                            contentBlocks: discussionBlocks
+                        });
+                        assistantMessageId = persisted.id;
+                    } catch (persistError) {
+                        controller.enqueue(
+                            encoder.encode(
+                                sseEvent('error', {
+                                    message:
+                                        persistError instanceof Error
+                                            ? persistError.message
+                                            : 'Failed to save assistant message'
+                                })
+                            )
+                        );
+                    }
+
+                    controller.enqueue(
+                        encoder.encode(
+                            sseEvent('done', {
+                                runId,
+                                routeType,
+                                contentBlocks: discussionBlocks,
+                                messageId: assistantMessageId
+                            })
+                        )
+                    );
                 } else {
                     if (!clientBundle) {
                         throw new Error('Single-model runtime is not available for this chat mode');
@@ -557,7 +710,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         }
                     }
 
-                    await runIdPromise;
+                    if (runIdPromise) {
+                        await runIdPromise;
+                    }
                     if (runId) {
                         await updateAgentRun({
                             runId,
@@ -568,11 +723,44 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                         });
                     }
 
-                    controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: [] })));
+                    try {
+                        const persisted = await saveChatMessage({
+                            chatId: activeChatId,
+                            biglotUserId,
+                            role: 'assistant',
+                            content: streamedText,
+                            mode,
+                            channel: 'web',
+                            runId
+                        });
+                        assistantMessageId = persisted.id;
+                    } catch (persistError) {
+                        controller.enqueue(
+                            encoder.encode(
+                                sseEvent('error', {
+                                    message:
+                                        persistError instanceof Error
+                                            ? persistError.message
+                                            : 'Failed to save assistant message'
+                                })
+                            )
+                        );
+                    }
+
+                    controller.enqueue(
+                        encoder.encode(
+                            sseEvent('done', {
+                                runId,
+                                routeType,
+                                contentBlocks: [],
+                                messageId: assistantMessageId
+                            })
+                        )
+                    );
                 }
             } catch (e: unknown) {
                 const message = e instanceof Error ? e.message : `Failed to call ${runProviderLabel}`;
-                await runIdPromise.catch(() => null);
+                await runIdPromise?.catch(() => null);
                 if (runId) {
                     await updateAgentRun({
                         runId,

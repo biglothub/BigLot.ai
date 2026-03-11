@@ -265,6 +265,12 @@ export type SSERunId = {
 	runId: string;
 };
 
+export type SSEChatCreated = {
+	event: 'chat_created';
+	chatId: string;
+	title: string;
+};
+
 export type SSETextDelta = {
 	event: 'text_delta';
 	content: string;
@@ -296,6 +302,7 @@ export type SSEDone = {
 	runId?: string | null;
 	routeType?: AgentRouteType;
 	contentBlocks: ContentBlock[];
+	messageId?: string;
 };
 
 export type SSEPlanCreate = {
@@ -357,6 +364,7 @@ export type SSEResearchReport = {
 export type SSEEvent =
 	| SSERunStart
 	| SSERunId
+	| SSEChatCreated
 	| SSETextDelta
 	| SSEToolStart
 	| SSEToolResult
