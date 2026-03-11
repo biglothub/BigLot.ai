@@ -1,7 +1,21 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const allowedModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1'];
+const allowedModels = [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'o3-mini',
+    'deepseek',
+    'deepseek-r1',
+    'claude-sonnet',
+    'claude-haiku',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'minimax-text-01',
+    'minimax-m1',
+    'minimax-m2.5',
+    'minimax-m2.5-highspeed'
+];
 const nextModel = process.argv[2];
 
 if (!nextModel) {

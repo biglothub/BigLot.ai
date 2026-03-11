@@ -31,7 +31,7 @@ describe('validateEnvironment', () => {
 		setEnv({ PUBLIC_SUPABASE_URL: 'url', PUBLIC_SUPABASE_ANON_KEY: 'key' });
 		const result = validateEnvironment();
 		expect(result.valid).toBe(false);
-		expect(result.errors).toContain('Either OPENAI_API_KEY or DEEPSEEK_API_KEY is required');
+		expect(result.errors).toContain('Either OPENAI_API_KEY, DEEPSEEK_API_KEY, or MINIMAX_API_KEY is required');
 	});
 
 	it('passes with only OpenAI key', () => {
@@ -43,6 +43,17 @@ describe('validateEnvironment', () => {
 	it('passes with only DeepSeek key', () => {
 		setEnv({
 			DEEPSEEK_API_KEY: 'sk-deep123',
+			PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+			PUBLIC_SUPABASE_ANON_KEY: 'key',
+			SUPABASE_SERVICE_ROLE_KEY: 'role'
+		});
+		const result = validateEnvironment();
+		expect(result.valid).toBe(true);
+	});
+
+	it('passes with only MiniMax key', () => {
+		setEnv({
+			MINIMAX_API_KEY: 'sk-minimax123',
 			PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
 			PUBLIC_SUPABASE_ANON_KEY: 'key',
 			SUPABASE_SERVICE_ROLE_KEY: 'role'
@@ -69,6 +80,16 @@ describe('validateEnvironment', () => {
 		});
 		const result = validateEnvironment();
 		expect(result.warnings).toContainEqual(expect.stringContaining('DEEPSEEK_API_KEY may not be valid'));
+	});
+
+	it('warns when MiniMax key does not start with sk-', () => {
+		setEnv({
+			MINIMAX_API_KEY: 'bad-key',
+			PUBLIC_SUPABASE_URL: 'url',
+			PUBLIC_SUPABASE_ANON_KEY: 'key'
+		});
+		const result = validateEnvironment();
+		expect(result.warnings).toContainEqual(expect.stringContaining('MINIMAX_API_KEY may not be valid'));
 	});
 
 	// --- Supabase validation ---
@@ -151,6 +172,18 @@ describe('validateEnvironment', () => {
 			DISCUSSION_BULL_MODEL: 'gpt-4o',
 			DISCUSSION_BEAR_MODEL: 'deepseek',
 			DISCUSSION_MODERATOR_MODEL: 'gpt-4o-mini'
+		});
+		const result = validateEnvironment();
+		const discWarnings = result.warnings.filter(w => w.includes('DISCUSSION_'));
+		expect(discWarnings).toHaveLength(0);
+	});
+
+	it('accepts MiniMax discussion models as valid', () => {
+		setMinimalValid();
+		setEnv({
+			DISCUSSION_BULL_MODEL: 'minimax-text-01',
+			DISCUSSION_BEAR_MODEL: 'minimax-m2.5',
+			DISCUSSION_MODERATOR_MODEL: 'minimax-m1'
 		});
 		const result = validateEnvironment();
 		const discWarnings = result.warnings.filter(w => w.includes('DISCUSSION_'));

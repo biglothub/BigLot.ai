@@ -2,11 +2,12 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { getSystemPrompt, getCustomBotSystemPrompt, normalizeAgentMode } from '$lib/agent/systemPrompts';
-import { getClientForModel, isAIModel, resolveDefaultAIModel } from '$lib/server/aiProvider.server';
+import { StreamingThinkFilter } from '$lib/server/aiProvider.server';
 import { getSupabaseAdminClient } from '$lib/server/supabaseAdmin.server';
 import { checkRateLimit, RATE_LIMITS } from '$lib/server/rateLimiter.server';
 import { runAgentLoop } from '$lib/server/agentLoop.server';
 import { runDiscussionLoop } from '$lib/server/discussionLoop.server';
+import { resolveChatModelRuntime } from '$lib/server/chatModelRuntime.server';
 import {
 	createAgentRun,
 	logToolExecution,
@@ -201,37 +202,29 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		? getCustomBotSystemPrompt(customBot.system_prompt, customBot.tools, planningEnabled, isDeepResearch)
 		: getSystemPrompt(mode, planningEnabled, isDeepResearch);
 
-	const sharedModel = resolveDefaultAIModel();
-	const normalModel = isAIModel(env.NORMAL_AI_MODEL) ? env.NORMAL_AI_MODEL : sharedModel;
-	const agentModel = isAIModel(env.AGENT_AI_MODEL) ? env.AGENT_AI_MODEL : sharedModel;
-
-	// Model selection: custom bot override → env defaults
-	const selectedModel = customBot?.default_model && isAIModel(customBot.default_model)
-		? customBot.default_model
-		: chatMode === 'discussion' || chatMode === 'agent' || chatMode === 'research' || isDeepResearch ? agentModel : normalModel;
+	const { selectedModel, runModelLabel, runProviderLabel, clientBundle } = resolveChatModelRuntime(
+		chatMode,
+		customBot?.default_model ?? null
+	);
 
 	if (env.BIGLOT_CHAT_ECHO_MODE === '1') {
-		return new Response(`Mode: ${mode}\nModel: ${selectedModel}\n`, {
+		return new Response(`Mode: ${mode}\nModel: ${runModelLabel}\n`, {
 			headers: {
 				'Content-Type': 'text/plain; charset=utf-8',
 				'Cache-Control': 'no-cache',
 				'X-BigLot-Mode': mode,
-				'X-BigLot-Model': selectedModel
+				'X-BigLot-Model': runModelLabel
 			}
 		});
 	}
 
-	const { client, apiModel, provider, supportsImageInput } = getClientForModel(selectedModel);
-	if (hasImageInput && !supportsImageInput) {
-		const configuredKey =
-			chatMode === 'discussion' || chatMode === 'agent' || chatMode === 'research' || isDeepResearch
-				? 'AGENT_AI_MODEL'
-				: 'NORMAL_AI_MODEL';
+	if (clientBundle && hasImageInput && !clientBundle.supportsImageInput) {
+		const configuredKey = chatMode === 'agent' ? 'AGENT_AI_MODEL' : 'NORMAL_AI_MODEL';
 		return json(
 			{
 				error: `Model '${selectedModel}' does not support image input. Switch ${configuredKey} or AI_MODEL to 'gpt-4o' or 'gpt-4o-mini'.`
 			},
-			{ status: 400, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': selectedModel } }
+			{ status: 400, headers: { 'X-BigLot-Mode': mode, 'X-BigLot-Model': runModelLabel } }
 		);
 	}
 
@@ -253,7 +246,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 					html: 'html', css: 'css', xml: 'xml', yaml: 'yaml', yml: 'yaml'
 				};
 				const lang = langMap[ext] ?? ext;
-				const fileBlock = `[File: ${message.file_name ?? 'attachment'}]\n\`\`\`${lang}\n${message.file_content}\n\`\`\``;
+				const fileBlock = `[File: ${message.file_name ?? 'attachment'}]
+\`\`\`${lang}
+${message.file_content}
+\`\`\``;
 				const userText = message.content ? `\n\n${message.content}` : '';
 				const fullText = fileBlock + userText;
 
@@ -297,8 +293,8 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                 mode,
                 chatMode,
                 routeType,
-                provider,
-                model: selectedModel,
+                provider: runProviderLabel,
+                model: runModelLabel,
                 clientIp,
                 messageCount: safeMessages.length,
                 hasImageInput,
@@ -319,12 +315,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                             routeType,
                             mode,
                             chatMode,
-                            model: selectedModel
+                            model: runModelLabel
                         })
                     )
                 );
 
                 if (chatMode === 'agent' || chatMode === 'research') {
+                    if (!clientBundle) {
+                        throw new Error('Single-model runtime is not available for this chat mode');
+                    }
+
+                    const { client, apiModel } = clientBundle;
+
                     // Agent / Research mode: GPT-4o with tool calling via agent loop
                     const allBlocks: ContentBlock[] = [];
 
@@ -523,18 +525,28 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
                     controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: discussionBlocks })));
                 } else {
-                    // Normal mode: DeepSeek direct streaming, no tools
+                    if (!clientBundle) {
+                        throw new Error('Single-model runtime is not available for this chat mode');
+                    }
+
+                    const { client, apiModel } = clientBundle;
+
+                    // Normal mode: direct streaming, no tools
                     const stream = await client.chat.completions.create({
                         model: apiModel,
                         messages: formattedMessages,
                         stream: true
                     });
 
+                    const thinkFilter = new StreamingThinkFilter();
                     for await (const chunk of stream) {
-                        const text = chunk.choices[0]?.delta?.content;
-                        if (text) {
-                            streamedText += text;
-                            controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                        const raw = chunk.choices[0]?.delta?.content;
+                        if (raw) {
+                            const text = thinkFilter.process(raw);
+                            if (text) {
+                                streamedText += text;
+                                controller.enqueue(encoder.encode(sseEvent('text_delta', { content: text })));
+                            }
                         }
                     }
 
@@ -552,7 +564,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
                     controller.enqueue(encoder.encode(sseEvent('done', { runId, routeType, contentBlocks: [] })));
                 }
             } catch (e: unknown) {
-                const message = e instanceof Error ? e.message : `Failed to call ${provider}`;
+                const message = e instanceof Error ? e.message : `Failed to call ${runProviderLabel}`;
                 await runIdPromise.catch(() => null);
                 if (runId) {
                     await updateAgentRun({
@@ -577,7 +589,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'X-BigLot-Mode': mode,
-            'X-BigLot-Model': selectedModel
+            'X-BigLot-Model': runModelLabel
         }
     });
 };

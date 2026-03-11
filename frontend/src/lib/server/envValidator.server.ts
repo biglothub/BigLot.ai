@@ -19,7 +19,21 @@ function getEnv(key: string): string | undefined {
     return (env as Record<string, string | undefined>)[key];
 }
 
-const VALID_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'deepseek', 'deepseek-r1', 'claude-sonnet', 'claude-haiku', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+const VALID_MODELS = [
+	'gpt-4o',
+	'gpt-4o-mini',
+	'o3-mini',
+	'deepseek',
+	'deepseek-r1',
+	'claude-sonnet',
+	'claude-haiku',
+	'gemini-2.5-flash',
+	'gemini-2.5-pro',
+	'minimax-text-01',
+	'minimax-m1',
+	'minimax-m2.5',
+	'minimax-m2.5-highspeed'
+];
 
 function validateModelEnv(
     key: string,
@@ -44,22 +58,28 @@ export function validateEnvironment(): EnvValidationResult {
     const warnings: string[] = [];
 
     // Required for AI features
-    const openaiKey = getEnv('OPENAI_API_KEY') ?? '';
-    const deepseekKey = getEnv('DEEPSEEK_API_KEY') ?? '';
-    const hasOpenAI = !!openaiKey.trim();
-    const hasDeepSeek = !!deepseekKey.trim();
+	const openaiKey = getEnv('OPENAI_API_KEY') ?? '';
+	const deepseekKey = getEnv('DEEPSEEK_API_KEY') ?? '';
+	const minimaxKey = getEnv('MINIMAX_API_KEY') ?? '';
+	const hasOpenAI = !!openaiKey.trim();
+	const hasDeepSeek = !!deepseekKey.trim();
+	const hasMiniMax = !!minimaxKey.trim();
 
-    if (!hasOpenAI && !hasDeepSeek) {
-        errors.push('Either OPENAI_API_KEY or DEEPSEEK_API_KEY is required');
-    }
+	if (!hasOpenAI && !hasDeepSeek && !hasMiniMax) {
+		errors.push('Either OPENAI_API_KEY, DEEPSEEK_API_KEY, or MINIMAX_API_KEY is required');
+	}
 
     if (hasOpenAI && !openaiKey.startsWith('sk-')) {
         warnings.push('OPENAI_API_KEY may not be valid (should start with sk-)');
     }
 
-    if (hasDeepSeek && !deepseekKey.startsWith('sk-')) {
-        warnings.push('DEEPSEEK_API_KEY may not be valid (should start with sk-)');
-    }
+	if (hasDeepSeek && !deepseekKey.startsWith('sk-')) {
+		warnings.push('DEEPSEEK_API_KEY may not be valid (should start with sk-)');
+	}
+
+	if (hasMiniMax && !minimaxKey.startsWith('sk-')) {
+		warnings.push('MINIMAX_API_KEY may not be valid (should start with sk-)');
+	}
 
     // Required for Supabase
     const supabaseUrl = getEnv('PUBLIC_SUPABASE_URL') ?? '';

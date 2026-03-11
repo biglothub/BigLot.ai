@@ -21,6 +21,7 @@ import './tools/webCrawl.tool';
 import './tools/memory.tool';
 import './tools/handoff.tool';
 import { getSystemPrompt, normalizeAgentMode, type AgentMode } from '$lib/agent/systemPrompts';
+import { StreamingThinkFilter } from '$lib/server/aiProvider.server';
 
 export type AgentCallbacks = {
 	onTextDelta: (text: string) => void;
@@ -86,15 +87,19 @@ async function streamLLMCall(
 	let fullText = '';
 	const toolCallMap = new Map<number, ParsedToolCall>();
 	let finishReason: string | null = null;
+	const thinkFilter = new StreamingThinkFilter();
 
 	for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
 		const choice = chunk.choices[0];
 		if (!choice) continue;
 
-		const textDelta = choice.delta?.content;
-		if (textDelta) {
-			fullText += textDelta;
-			onTextDelta(textDelta);
+		const raw = choice.delta?.content;
+		if (raw) {
+			const textDelta = thinkFilter.process(raw);
+			if (textDelta) {
+				fullText += textDelta;
+				onTextDelta(textDelta);
+			}
 		}
 
 		const deltaToolCalls = choice.delta?.tool_calls;
@@ -118,6 +123,12 @@ async function streamLLMCall(
 		if (choice.finish_reason) {
 			finishReason = choice.finish_reason;
 		}
+	}
+
+	const trailingText = thinkFilter.flush();
+	if (trailingText) {
+		fullText += trailingText;
+		onTextDelta(trailingText);
 	}
 
 	return { fullText, toolCalls: Array.from(toolCallMap.values()), finishReason };
