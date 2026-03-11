@@ -171,6 +171,89 @@ describe('runDiscussionLoop', () => {
 		expect(block.totalUsage.completionTokens).toBeGreaterThan(0);
 	});
 
+	it('continues the same turn when the provider stops due to token length', async () => {
+		setEnv({
+			OPENAI_API_KEY: 'sk-test',
+			DISCUSSION_BULL_MODEL: 'gpt-4o',
+			DISCUSSION_BEAR_MODEL: 'gpt-4o-mini',
+			DISCUSSION_MODERATOR_MODEL: 'gpt-4o'
+		});
+
+		const { getClientForModel } = await import('./aiProvider.server');
+		const streamCallCount = new Map<string, number>();
+		(getClientForModel as any).mockImplementation((model: string) => {
+			const client = {
+				chat: {
+					completions: {
+						create: vi.fn(async (params: any) => {
+							if (!params.stream) {
+								return { choices: [{ message: { content: 'SKIP' } }] };
+							}
+
+							const systemPrompt = params.messages?.[0]?.content ?? '';
+							const isBullTurn =
+								typeof systemPrompt === 'string' &&
+								systemPrompt.includes('You are a bullish market analyst');
+							const countKey = `${model}:${isBullTurn ? 'bull' : 'other'}`;
+							const callCount = (streamCallCount.get(countKey) ?? 0) + 1;
+							streamCallCount.set(countKey, callCount);
+
+							let chunks: any[];
+							if (isBullTurn && callCount === 1) {
+								chunks = [
+									{
+										choices: [{ delta: { content: 'ประเด็นสุดท้ายคือ **ความเสี่ยงทางเทคโนโลยีและ' }, finish_reason: null }],
+										usage: { prompt_tokens: 10, completion_tokens: 20 }
+									},
+									{ choices: [{ delta: {}, finish_reason: 'length' }] }
+								];
+							} else if (isBullTurn && callCount === 2) {
+								chunks = [
+									{
+										choices: [{ delta: { content: ' ความปลอดภัยไซเบอร์ต้องติดตาม แต่ระบบยังพัฒนาได้ต่อเนื่อง**' }, finish_reason: null }],
+										usage: { prompt_tokens: 8, completion_tokens: 12 }
+									},
+									{ choices: [{ delta: {}, finish_reason: 'stop' }] }
+								];
+							} else {
+								chunks = [
+									{
+										choices: [{ delta: { content: `${model} response` }, finish_reason: null }],
+										usage: { prompt_tokens: 5, completion_tokens: 5 }
+									},
+									{ choices: [{ delta: {}, finish_reason: 'stop' }] }
+								];
+							}
+
+							return {
+								[Symbol.asyncIterator]() {
+									let index = 0;
+									return {
+										async next() {
+											if (index < chunks.length) {
+												return { done: false, value: chunks[index++] };
+											}
+											return { done: true, value: undefined };
+										}
+									};
+								}
+							};
+						})
+					}
+				}
+			};
+
+			return { client, apiModel: model, provider: 'openai', supportsImageInput: true };
+		});
+
+		const result = await runDiscussionLoop(createConfig());
+		const block = result[0] as any;
+		const bullTurn = block.turns.find((turn: any) => turn.panelistId === 'bull' && turn.round === 1);
+
+		expect(streamCallCount.get('gpt-4o:bull')).toBe(2);
+		expect(bullTurn.content).toContain('**ความเสี่ยงทางเทคโนโลยีและ ความปลอดภัยไซเบอร์');
+		expect(bullTurn.content.endsWith('**')).toBe(true);
+	});
 
 	it('uses env override models when set', async () => {
 		setEnv({

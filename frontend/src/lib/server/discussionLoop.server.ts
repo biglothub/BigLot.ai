@@ -92,6 +92,9 @@ const MAX_TOKENS_PER_ROLE: Record<string, number> = {
 	synthesis: 1200
 };
 
+const MAX_TURN_CONTINUATIONS = 2;
+const CONTINUE_TURN_PROMPT =
+	'Continue exactly from where you stopped. Do not restart, summarize, or repeat prior points. Begin with the unfinished sentence and keep the same language and markdown structure.';
 
 // --- Turn Schedule ---
 
@@ -415,52 +418,78 @@ async function streamTurnWithModel(
 
 	try {
 		const { client, apiModel } = getClientForModel(model);
+		let finishReason: string | null = null;
+		let requestMessages = messages;
 
-		const createParams: Record<string, unknown> = {
-			model: apiModel,
-			messages,
-			stream: true,
-			stream_options: { include_usage: true }
-		};
-		if (apiModel !== 'deepseek-reasoner') {
-			createParams.temperature = temperature;
-		}
-		createParams.max_tokens = MAX_TOKENS_PER_ROLE[turnRole] ?? 600;
+		for (let continuationIndex = 0; continuationIndex <= MAX_TURN_CONTINUATIONS; continuationIndex++) {
+			const createParams: Record<string, unknown> = {
+				model: apiModel,
+				messages: requestMessages,
+				stream: true,
+				stream_options: { include_usage: true }
+			};
+			if (apiModel !== 'deepseek-reasoner') {
+				createParams.temperature = temperature;
+			}
+			createParams.max_tokens = MAX_TOKENS_PER_ROLE[turnRole] ?? 600;
 
-		const stream = await (client.chat.completions.create as Function)(createParams);
+			const stream = await (client.chat.completions.create as Function)(createParams);
 
-		const thinkFilter = new StreamingThinkFilter();
-		for await (const chunk of stream as AsyncIterable<any>) {
-			const raw = chunk.choices?.[0]?.delta?.content;
-			if (raw) {
-				const text = thinkFilter.process(raw);
-				if (text) {
-					turnText += text;
-					callbacks.onTextDelta({
-						discussionId: turnRuntime.discussionId,
-						turnId: turnRuntime.turnId,
-						panelistId: turnRuntime.panelistId,
-						round: turnRuntime.round,
-						text
-					});
+			const thinkFilter = new StreamingThinkFilter();
+			finishReason = null;
+			for await (const chunk of stream as AsyncIterable<any>) {
+				const raw = chunk.choices?.[0]?.delta?.content;
+				if (raw) {
+					const text = thinkFilter.process(raw);
+					if (text) {
+						turnText += text;
+						callbacks.onTextDelta({
+							discussionId: turnRuntime.discussionId,
+							turnId: turnRuntime.turnId,
+							panelistId: turnRuntime.panelistId,
+							round: turnRuntime.round,
+							text
+						});
+					}
+				}
+				const choiceFinishReason = chunk.choices?.[0]?.finish_reason;
+				if (choiceFinishReason) {
+					finishReason = choiceFinishReason;
+				}
+				if (chunk.usage) {
+					turnUsage.promptTokens += chunk.usage.prompt_tokens ?? 0;
+					turnUsage.completionTokens += chunk.usage.completion_tokens ?? 0;
 				}
 			}
-			if (chunk.usage) {
-				turnUsage.promptTokens = chunk.usage.prompt_tokens ?? 0;
-				turnUsage.completionTokens = chunk.usage.completion_tokens ?? 0;
-			}
-		}
 
-		const trailingText = thinkFilter.flush();
-		if (trailingText) {
-			turnText += trailingText;
-			callbacks.onTextDelta({
-				discussionId: turnRuntime.discussionId,
-				turnId: turnRuntime.turnId,
-				panelistId: turnRuntime.panelistId,
-				round: turnRuntime.round,
-				text: trailingText
-			});
+			const trailingText = thinkFilter.flush();
+			if (trailingText) {
+				turnText += trailingText;
+				callbacks.onTextDelta({
+					discussionId: turnRuntime.discussionId,
+					turnId: turnRuntime.turnId,
+					panelistId: turnRuntime.panelistId,
+					round: turnRuntime.round,
+					text: trailingText
+				});
+			}
+
+			if (finishReason !== 'length') {
+				break;
+			}
+
+			if (continuationIndex === MAX_TURN_CONTINUATIONS) {
+				console.warn(
+					`[BigLot.ai] Discussion turn ${turnRuntime.turnId} hit max token limit ${MAX_TURN_CONTINUATIONS + 1} times; returning partial output.`
+				);
+				break;
+			}
+
+			requestMessages = [
+				...messages,
+				{ role: 'assistant', content: turnText },
+				{ role: 'user', content: CONTINUE_TURN_PROMPT }
+			];
 		}
 
 		return {
