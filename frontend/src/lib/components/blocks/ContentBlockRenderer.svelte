@@ -2,7 +2,6 @@
     import type { ContentBlock } from "$lib/types/contentBlock";
     import TextBlock from "./TextBlock.svelte";
     import MetricCard from "./MetricCard.svelte";
-    import ChartBlock from "./ChartBlock.svelte";
     import TableBlock from "./TableBlock.svelte";
     import ImageBlock from "./ImageBlock.svelte";
     import EmbedBlock from "./EmbedBlock.svelte";
@@ -24,13 +23,18 @@
 {:else if block.type === "metric_card"}
     <MetricCard title={block.title} metrics={block.metrics} />
 {:else if block.type === "chart"}
-    <ChartBlock
-        chartType={block.chartType}
-        symbol={block.symbol}
-        interval={block.interval}
-        data={block.data}
-        indicators={block.indicators}
-    />
+    {#await import("./ChartBlock.svelte") then module}
+        {@const ChartBlock = module.default}
+        <ChartBlock
+            chartType={block.chartType}
+            symbol={block.symbol}
+            interval={block.interval}
+            data={block.data}
+            indicators={block.indicators}
+        />
+    {:catch}
+        <ErrorBlock message="Failed to load chart renderer." />
+    {/await}
 {:else if block.type === "table"}
     <TableBlock title={block.title} headers={block.headers} rows={block.rows} />
 {:else if block.type === "image"}

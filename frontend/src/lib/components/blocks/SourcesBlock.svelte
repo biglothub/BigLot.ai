@@ -29,15 +29,18 @@
     {#each sources as source, idx}
         <span class="source-pill-wrapper">
             <button
+                type="button"
                 class="source-pill"
                 onclick={() => togglePopover(idx)}
                 title={source.name}
+                aria-label={`Show source ${idx + 1}: ${source.name}`}
+                aria-expanded={activePopover === idx}
+                aria-haspopup="dialog"
             >
                 {idx + 1}
             </button>
             {#if activePopover === idx}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div class="source-popover" onclick={(e) => e.stopPropagation()}>
+                <div class="source-popover" role="dialog" aria-label={`Source details for ${source.name}`}>
                     <div class="popover-name">{source.name}</div>
                     <div class="popover-time">{formatTime(source.accessedAt)}</div>
                     {#if source.url}

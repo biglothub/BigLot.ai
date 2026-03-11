@@ -5,6 +5,7 @@
     import { onMount } from "svelte";
 
     export let content = "";
+    let container: HTMLDivElement;
 
     // Configure marked with GFM and syntax highlighting
     marked.setOptions({
@@ -40,7 +41,7 @@
         return `<div class="code-block-wrapper">
     <div class="code-header">
         <span class="code-language">${language}</span>
-        <button class="copy-btn" data-code="${escapedCode}" onclick="copyCode(this)">Copy</button>
+        <button type="button" class="copy-btn" data-copy-code="${escapedCode}">Copy</button>
     </div>
     <pre><code class="hljs">${highlighted}</code></pre>
 </div>`;
@@ -65,7 +66,7 @@
             ...sanitizeHtml.defaults.allowedAttributes,
             div: ["class"],
             span: ["class"],
-            button: ["class", "data-code", "onclick"],
+            button: ["class", "data-copy-code", "type"],
             a: ["href", "title", "target", "rel"],
             code: ["class"],
             pre: ["class"],
@@ -88,28 +89,32 @@
 
     $: html = sanitizeHtml(marked.parse(content || "") as string, sanitizeConfig);
 
-    // Copy function exposed to window
-    onMount(() => {
-        (window as any).copyCode = (btn: HTMLButtonElement) => {
-            const code = btn.getAttribute("data-code") || "";
-            navigator.clipboard.writeText(code).then(() => {
-                const originalText = btn.textContent;
-                btn.textContent = "Copied!";
-                btn.classList.add("copied");
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.classList.remove("copied");
-                }, 2000);
-            });
-        };
+    function handleMarkdownClick(event: MouseEvent) {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
 
-        return () => {
-            delete (window as any).copyCode;
-        };
+        const button = target.closest('button[data-copy-code]');
+        if (!(button instanceof HTMLButtonElement)) return;
+
+        const code = button.getAttribute("data-copy-code") || "";
+        void navigator.clipboard.writeText(code).then(() => {
+            const originalText = button.textContent;
+            button.textContent = "Copied!";
+            button.classList.add("copied");
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove("copied");
+            }, 2000);
+        });
+    }
+
+    onMount(() => {
+        container?.addEventListener("click", handleMarkdownClick);
+        return () => container?.removeEventListener("click", handleMarkdownClick);
     });
 </script>
 
-<div class="prose-gold markdown-body">
+<div bind:this={container} class="prose-gold markdown-body">
     {@html html}
 </div>
 
