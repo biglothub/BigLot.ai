@@ -137,10 +137,6 @@
         >
             <Bot size={16} class="text-muted-foreground" />
             <span>Indicator Builder</span>
-            <span
-                class="ml-auto text-[10px] text-primary/70 font-medium"
-                >AI</span
-            >
         </a>
 
         <a

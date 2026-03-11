@@ -736,7 +736,6 @@ ALTER TABLE custom_indicators DISABLE ROW LEVEL SECURITY;</code></pre>
             <div class="flex items-center gap-3 text-sm text-foreground/70 min-w-0">
                 <Bot size={16} class="text-muted-foreground shrink-0" />
                 <span class="truncate">Indicator Builder</span>
-                <span class="text-[10px] text-primary/70 font-medium shrink-0">AI</span>
             </div>
             {#if isReady && activeConfig}
                 <span class="text-white/15 text-sm select-none">·</span>
