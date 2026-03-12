@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { browser } from "$app/environment";
     import Sidebar from "$lib/components/Sidebar.svelte";
     import { onDestroy, onMount } from 'svelte';
     import { fade, fly } from 'svelte/transition';
@@ -182,9 +181,7 @@
             clearInterval(interval);
         }
         abortController?.abort();
-        if (browser) {
-            window.removeEventListener('popstate', handlePopState);
-        }
+        window.removeEventListener('popstate', handlePopState);
     });
 
     function fmtK(n: number): string {
@@ -705,11 +702,14 @@
         --dashboard-card-radius: 0.75rem;
         --dashboard-card-summary-size: 0.78rem;
         --dashboard-card-meta-size: 0.64rem;
+        --dashboard-card-label-size: 0.66rem;
+        --dashboard-card-status-size: 0.62rem;
         --dashboard-source-gap: 0.65rem;
         --dashboard-pill-size: 0.7rem;
         --dashboard-pill-gap: 0.4rem;
         --dashboard-pill-pad-y: 0.38rem;
         --dashboard-pill-pad-x: 0.7rem;
+        --dashboard-pill-pad-x-action: 0.78rem;
         --dashboard-note-size: 0.76rem;
         --dashboard-score-size: 1.8rem;
         --dashboard-score-min: 3rem;
@@ -724,6 +724,7 @@
         --dashboard-gold-price-size: 1.85rem;
         --dashboard-gold-change-size: 0.7rem;
         --dashboard-gold-meta-size: 0.54rem;
+        --dashboard-gold-cached-tag-size: 0.48rem;
         --dashboard-gold-secondary-size: 0.8rem;
         --dashboard-gold-padding-block: 0;
         --dashboard-gold-padding-inline: 0;
@@ -897,7 +898,7 @@
 
     .refresh-button,
     .notice-action {
-        padding: var(--dashboard-pill-pad-y) calc(var(--dashboard-pill-pad-x) + 0.08rem);
+        padding: var(--dashboard-pill-pad-y) var(--dashboard-pill-pad-x-action);
         background: linear-gradient(180deg, rgba(214, 181, 123, 0.18), rgba(214, 181, 123, 0.1));
         color: rgba(255, 247, 232, 0.95);
         border: 1px solid rgba(214, 181, 123, 0.24);
@@ -1019,7 +1020,7 @@
     }
 
     .source-card-label {
-        font-size: calc(var(--dashboard-card-meta-size) + 0.02rem);
+        font-size: var(--dashboard-card-label-size);
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -1027,7 +1028,7 @@
     }
 
     .source-card-status {
-        font-size: calc(var(--dashboard-card-meta-size) - 0.02rem);
+        font-size: var(--dashboard-card-status-size);
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;

@@ -270,7 +270,7 @@
     }
 
     .hero-cached-tag {
-        font-size: calc(var(--dashboard-gold-meta-size, 0.54rem) - 0.06rem);
+        font-size: var(--dashboard-gold-cached-tag-size, 0.48rem);
         padding: 1px 4px;
         border-radius: 3px;
         background: rgba(245, 158, 11, 0.12);
