@@ -229,7 +229,7 @@
                 <Search size={13} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 <input
                     type="text"
-                    placeholder="ค้นหาแชท..."
+                    placeholder="Search chats..."
                     bind:value={searchQuery}
                     class="w-full bg-white/5 border border-border/50 rounded-md pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
                 />

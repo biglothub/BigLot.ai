@@ -23,7 +23,7 @@
     {#if gold}
         <div class="hero-top">
             <div class="hero-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" style="filter: drop-shadow(0 0 8px rgba(245,158,11,0.5))">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="filter: drop-shadow(0 0 8px rgba(245,158,11,0.5))">
                     <circle cx="12" cy="12" r="10" stroke="#f59e0b" stroke-width="1.5" fill="rgba(245,158,11,0.12)"/>
                     <text x="12" y="16" text-anchor="middle" font-size="10" font-weight="800" fill="#f59e0b" letter-spacing="-0.5">Au</text>
                 </svg>
@@ -87,21 +87,25 @@
     .hero-panel {
         background: linear-gradient(135deg, rgba(245,158,11,0.07) 0%, rgba(10,12,18,0.95) 55%);
         border: 1px solid rgba(245,158,11,0.18);
-        border-radius: 16px;
-        padding: 1.25rem 1.5rem;
+        border-radius: var(--dashboard-gold-radius, 10px);
+        padding: var(--dashboard-gold-padding-block, 0.8rem) var(--dashboard-gold-padding-inline, 0.95rem);
         display: flex;
         flex-direction: column;
-        gap: 0.55rem;
+        gap: var(--dashboard-gold-gap, 0.42rem);
         position: relative;
         overflow: hidden;
     }
+
     .hero-panel::before {
         content: '';
         position: absolute;
-        top: 0; left: 0; right: 0;
+        top: 0;
+        left: 0;
+        right: 0;
         height: 1px;
         background: linear-gradient(90deg, transparent, rgba(245,158,11,0.4), transparent);
     }
+
     .hero-panel-embedded {
         background: transparent;
         border: 0;
@@ -109,136 +113,164 @@
         padding: 0;
         overflow: visible;
     }
+
     .hero-panel-embedded::before {
         display: none;
     }
+
     .hero-top {
         display: flex;
         align-items: center;
-        gap: 0.6rem;
+        gap: 0.45rem;
     }
-    .hero-icon { flex-shrink: 0; }
+
+    .hero-icon {
+        flex-shrink: 0;
+    }
+
     .hero-label-group {
         display: flex;
         align-items: baseline;
-        gap: 0.4rem;
+        gap: 0.3rem;
     }
+
     .hero-label {
-        font-size: 0.7rem;
+        font-size: var(--dashboard-gold-label-size, 0.62rem);
         font-weight: 800;
         color: #f59e0b;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.1em;
     }
+
     .hero-sub {
-        font-size: 0.6rem;
+        font-size: var(--dashboard-gold-sub-size, 0.54rem);
         color: rgba(255,255,255,0.28);
         font-weight: 500;
     }
+
     .hero-price {
-        font-size: 2.2rem;
+        font-size: var(--dashboard-gold-price-size, 1.85rem);
         font-weight: 800;
         font-variant-numeric: tabular-nums;
-        line-height: 1.1;
+        line-height: 1.05;
         background: linear-gradient(135deg, #fbbf24 0%, #f8fafc 60%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
+
     .hero-change-row {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
     }
+
     .hero-change {
-        font-size: 0.75rem;
+        font-size: var(--dashboard-gold-change-size, 0.7rem);
         font-weight: 700;
-        padding: 3px 10px;
-        border-radius: 5px;
+        padding: 0.24rem 0.62rem;
+        border-radius: 999px;
         border: 1px solid;
         font-variant-numeric: tabular-nums;
         letter-spacing: 0.02em;
     }
+
     .hero-24h {
-        font-size: 0.6rem;
+        font-size: var(--dashboard-gold-meta-size, 0.54rem);
         color: rgba(255,255,255,0.25);
         letter-spacing: 0.04em;
     }
+
     .hero-divider {
         height: 1px;
         background: rgba(255,255,255,0.05);
-        margin: 0.1rem 0;
     }
+
     .hero-secondary {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
     }
+
     .hero-sec-sep {
         width: 1px;
-        height: 24px;
+        height: 22px;
         background: rgba(255,255,255,0.07);
-        margin: 0 0.9rem;
+        margin: 0 0.72rem;
         flex-shrink: 0;
     }
+
     .hero-sec-item {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 0.1rem;
     }
+
     .hero-sec-label {
-        font-size: 0.58rem;
+        font-size: var(--dashboard-gold-meta-size, 0.54rem);
         color: rgba(255,255,255,0.28);
         text-transform: uppercase;
         letter-spacing: 0.07em;
         font-weight: 600;
     }
+
     .hero-sec-value {
-        font-size: 0.82rem;
+        font-size: var(--dashboard-gold-secondary-size, 0.8rem);
         font-weight: 600;
         color: rgba(255,255,255,0.82);
         font-variant-numeric: tabular-nums;
     }
-    .gold-text { color: #f59e0b; }
+
+    .gold-text {
+        color: #f59e0b;
+    }
+
     .hero-52w {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        margin-top: 0.15rem;
+        gap: 0.45rem;
+        margin-top: 0.1rem;
     }
-    .hero-52w-label {
-        font-size: 0.58rem;
+
+    .hero-52w-label,
+    .hero-52w-vals {
+        font-size: var(--dashboard-gold-meta-size, 0.54rem);
         color: rgba(255,255,255,0.25);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .hero-52w-label {
         font-weight: 700;
         letter-spacing: 0.06em;
         flex-shrink: 0;
     }
-    .hero-52w-bar { flex: 1; }
+
+    .hero-52w-bar {
+        flex: 1;
+    }
+
     .hero-52w-track {
-        height: 5px;
+        height: 4px;
         background: rgba(255,255,255,0.06);
-        border-radius: 3px;
+        border-radius: 999px;
         overflow: hidden;
     }
+
     .hero-52w-fill {
         height: 100%;
         background: linear-gradient(90deg, #ef4444, #f59e0b 50%, #22c55e);
-        border-radius: 3px;
+        border-radius: inherit;
         box-shadow: 0 0 6px rgba(245,158,11,0.4);
     }
-    .hero-52w-vals {
-        font-size: 0.56rem;
-        color: rgba(255,255,255,0.25);
-        white-space: nowrap;
-        font-variant-numeric: tabular-nums;
-    }
+
     .hero-empty {
-        font-size: 0.8rem;
+        font-size: var(--dashboard-support-size, 0.78rem);
         color: rgba(255,255,255,0.25);
         text-align: center;
-        padding: 2rem;
+        padding: 1.5rem;
     }
+
     .hero-cached-tag {
-        font-size: 0.48rem;
+        font-size: calc(var(--dashboard-gold-meta-size, 0.54rem) - 0.06rem);
         padding: 1px 4px;
         border-radius: 3px;
         background: rgba(245, 158, 11, 0.12);

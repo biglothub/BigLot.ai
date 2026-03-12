@@ -14,8 +14,8 @@
     } = $props();
 
     const svgW = 600;
-    const svgH = 200;
-    const pad = { top: 12, right: 8, bottom: 20, left: 55 };
+    const svgH = 184;
+    const pad = { top: 12, right: 8, bottom: 18, left: 52 };
 
     const chartW = $derived(svgW - pad.left - pad.right);
     const chartH = $derived(svgH - pad.top - pad.bottom);
@@ -129,8 +129,8 @@
     .mini-chart-wrap {
         background: rgba(10, 12, 18, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 0.75rem;
+        border-radius: var(--dashboard-chart-radius, 12px);
+        padding: var(--dashboard-chart-padding, 0.75rem);
         overflow: hidden;
     }
     .mini-chart-wrap-embedded {
@@ -146,7 +146,7 @@
         margin-bottom: 0.5rem;
     }
     .mini-chart-title {
-        font-size: 0.68rem;
+        font-size: var(--dashboard-chart-title-size, 0.64rem);
         font-weight: 600;
         color: rgba(255,255,255,0.38);
         text-transform: uppercase;
@@ -157,12 +157,12 @@
         opacity: 0.85;
     }
     .mini-chart-interval {
-        font-size: 0.58rem;
+        font-size: var(--dashboard-chart-pill-size, 0.62rem);
         color: #f59e0b;
         background: rgba(245,158,11,0.1);
         border: 1px solid rgba(245,158,11,0.2);
-        padding: 2px 8px;
-        border-radius: 4px;
+        padding: 0.22rem 0.5rem;
+        border-radius: 999px;
         font-weight: 600;
         letter-spacing: 0.04em;
     }
@@ -172,9 +172,9 @@
         display: block;
     }
     .mini-chart-empty {
-        font-size: 0.75rem;
+        font-size: var(--dashboard-support-size, 0.78rem);
         color: rgba(255,255,255,0.25);
         text-align: center;
-        padding: 2rem;
+        padding: var(--dashboard-chart-empty-padding, 1.5rem);
     }
 </style>

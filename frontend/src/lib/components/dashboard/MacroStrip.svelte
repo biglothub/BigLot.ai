@@ -88,7 +88,7 @@
     .macro-strip {
         background: rgba(10, 12, 18, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
+        border-radius: var(--dashboard-panel-radius, 12px);
         overflow: hidden;
         position: relative;
     }
@@ -117,34 +117,34 @@
     .ticker-dot {
         display: flex;
         align-items: center;
-        padding: 0 1.2rem;
+        padding: 0 0.8rem;
         color: rgba(255, 255, 255, 0.12);
-        font-size: 1.4rem;
+        font-size: 1rem;
         line-height: 1;
     }
     .macro-item {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 0.65rem 1.25rem;
+        padding: var(--dashboard-macro-item-pad-y, 0.52rem) var(--dashboard-macro-item-pad-x, 0.95rem);
         white-space: nowrap;
         border-right: 1px solid rgba(255, 255, 255, 0.04);
     }
     .macro-label {
-        font-size: 0.58rem;
+        font-size: var(--dashboard-macro-label-size, 0.54rem);
         font-weight: 700;
         color: rgba(255,255,255,0.25);
         text-transform: uppercase;
         letter-spacing: 0.07em;
     }
     .macro-value {
-        font-size: 0.85rem;
+        font-size: var(--dashboard-macro-value-size, 0.78rem);
         font-weight: 700;
         color: rgba(255,255,255,0.88);
         font-variant-numeric: tabular-nums;
     }
     .macro-change {
-        font-size: 0.62rem;
+        font-size: var(--dashboard-macro-change-size, 0.6rem);
         font-weight: 600;
         font-variant-numeric: tabular-nums;
         color: rgba(255,255,255,0.3);
@@ -155,9 +155,9 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 0.4rem 0.9rem;
-        margin: 0.35rem 0.5rem;
-        border-radius: 6px;
+        padding: var(--dashboard-macro-signal-pad-y, 0.32rem) var(--dashboard-macro-signal-pad-x, 0.75rem);
+        margin: 0.3rem 0.4rem;
+        border-radius: 999px;
         white-space: nowrap;
         align-self: center;
     }
@@ -168,19 +168,19 @@
         flex-shrink: 0;
     }
     .macro-signal-label {
-        font-size: 0.55rem;
+        font-size: var(--dashboard-macro-signal-label-size, 0.5rem);
         color: rgba(255,255,255,0.3);
         text-transform: uppercase;
         letter-spacing: 0.07em;
         font-weight: 600;
     }
     .macro-signal-value {
-        font-size: 0.7rem;
+        font-size: var(--dashboard-macro-signal-value-size, 0.64rem);
         font-weight: 800;
         letter-spacing: 0.08em;
     }
     .macro-empty {
-        font-size: 0.75rem;
+        font-size: var(--dashboard-support-size, 0.78rem);
         color: rgba(255,255,255,0.25);
         padding: 1rem;
         width: 100%;

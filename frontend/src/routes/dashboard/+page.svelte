@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { browser } from "$app/environment";
     import Sidebar from "$lib/components/Sidebar.svelte";
     import { onDestroy, onMount } from 'svelte';
     import { fade, fly } from 'svelte/transition';
@@ -39,7 +40,7 @@
     let fetchError = $state<string | null>(null);
     let lastUpdate = $state('');
     let selectedTimeframe = $state<DashboardTimeframe>('1mo');
-    let interval: ReturnType<typeof setInterval>;
+    let interval: ReturnType<typeof setInterval> | undefined;
     let abortController: AbortController | null = null;
     let activeRequestId = 0;
 
@@ -177,9 +178,13 @@
     });
 
     onDestroy(() => {
-        clearInterval(interval);
+        if (interval) {
+            clearInterval(interval);
+        }
         abortController?.abort();
-        window.removeEventListener('popstate', handlePopState);
+        if (browser) {
+            window.removeEventListener('popstate', handlePopState);
+        }
     });
 
     function fmtK(n: number): string {
@@ -405,7 +410,7 @@
                     </div>
                 {:else}
                     <div class="content-stack" transition:fade={{ duration: 180 }}>
-                        <section class="dashboard-panel">
+                        <section class="dashboard-panel dashboard-panel-health">
                             <div class="panel-head">
                                 <div>
                                     <p class="panel-eyebrow">System health</p>
@@ -686,9 +691,60 @@
     }
 
     .dashboard-container {
-        max-width: 1080px;
+        --dashboard-grid-gap: 0.75rem;
+        --dashboard-panel-padding: 0.9rem;
+        --dashboard-panel-radius: 1rem;
+        --dashboard-panel-head-pad: 0.55rem;
+        --dashboard-panel-head-margin: 0.65rem;
+        --dashboard-eyebrow-size: 0.62rem;
+        --dashboard-title-size: 1rem;
+        --dashboard-support-size: 0.78rem;
+        --dashboard-meta-size: 0.64rem;
+        --dashboard-caption-max: 16rem;
+        --dashboard-card-padding: 0.65rem;
+        --dashboard-card-radius: 0.75rem;
+        --dashboard-card-summary-size: 0.78rem;
+        --dashboard-card-meta-size: 0.64rem;
+        --dashboard-source-gap: 0.65rem;
+        --dashboard-pill-size: 0.7rem;
+        --dashboard-pill-gap: 0.4rem;
+        --dashboard-pill-pad-y: 0.38rem;
+        --dashboard-pill-pad-x: 0.7rem;
+        --dashboard-note-size: 0.76rem;
+        --dashboard-score-size: 1.8rem;
+        --dashboard-score-min: 3rem;
+        --dashboard-driver-padding-y: 0.55rem;
+        --dashboard-driver-padding-x: 0.7rem;
+        --dashboard-cot-gauge-width: 96px;
+        --dashboard-cot-gauge-height: 58px;
+        --dashboard-cot-label-size: 0.62rem;
+        --dashboard-cot-value-size: 0.84rem;
+        --dashboard-gold-label-size: 0.62rem;
+        --dashboard-gold-sub-size: 0.54rem;
+        --dashboard-gold-price-size: 1.85rem;
+        --dashboard-gold-change-size: 0.7rem;
+        --dashboard-gold-meta-size: 0.54rem;
+        --dashboard-gold-secondary-size: 0.8rem;
+        --dashboard-gold-padding-block: 0;
+        --dashboard-gold-padding-inline: 0;
+        --dashboard-gold-gap: 0.42rem;
+        --dashboard-macro-item-pad-y: 0.52rem;
+        --dashboard-macro-item-pad-x: 0.95rem;
+        --dashboard-macro-label-size: 0.54rem;
+        --dashboard-macro-value-size: 0.78rem;
+        --dashboard-macro-change-size: 0.6rem;
+        --dashboard-macro-signal-pad-y: 0.32rem;
+        --dashboard-macro-signal-pad-x: 0.75rem;
+        --dashboard-macro-signal-label-size: 0.5rem;
+        --dashboard-macro-signal-value-size: 0.64rem;
+        --dashboard-chart-padding: 0;
+        --dashboard-chart-radius: 0;
+        --dashboard-chart-title-size: 0.64rem;
+        --dashboard-chart-pill-size: 0.62rem;
+        --dashboard-chart-empty-padding: 1.25rem;
+        max-width: 980px;
         margin: 0 auto;
-        padding: 3.5rem 2rem 4rem;
+        padding: 1.5rem 1.25rem 2.25rem;
     }
 
     .dashboard-hero,
@@ -702,13 +758,46 @@
     }
 
     .dashboard-hero {
+        --dashboard-eyebrow-size: 0.62rem;
+        --dashboard-title-size: clamp(1.5rem, 2.4vw, 2rem);
+        --dashboard-support-size: 0.82rem;
+        --dashboard-pill-size: 0.72rem;
+        --dashboard-pill-pad-y: 0.42rem;
+        --dashboard-pill-pad-x: 0.78rem;
         display: flex;
         align-items: flex-end;
         justify-content: space-between;
-        gap: 1.5rem;
-        padding: 0 0 2rem;
-        margin-bottom: 1.75rem;
+        gap: 1rem;
+        padding: 0 0 1rem;
+        margin-bottom: 1rem;
         border-width: 0 0 1px;
+    }
+
+    .dashboard-panel {
+        border-radius: var(--dashboard-panel-radius);
+        padding: var(--dashboard-panel-padding);
+    }
+
+    .dashboard-panel-health {
+        --dashboard-panel-padding: 0.65rem;
+        --dashboard-panel-radius: 0.85rem;
+        --dashboard-panel-head-pad: 0.38rem;
+        --dashboard-panel-head-margin: 0.45rem;
+        --dashboard-eyebrow-size: 0.56rem;
+        --dashboard-title-size: 0.8rem;
+        --dashboard-support-size: 0.68rem;
+        --dashboard-meta-size: 0.52rem;
+        --dashboard-caption-max: 11rem;
+        --dashboard-card-padding: 0.5rem;
+        --dashboard-card-radius: 0.65rem;
+        --dashboard-card-summary-size: 0.68rem;
+        --dashboard-card-meta-size: 0.52rem;
+        --dashboard-source-gap: 0.5rem;
+    }
+
+    .state-card {
+        --dashboard-title-size: 1.12rem;
+        --dashboard-support-size: 0.82rem;
     }
 
     .hero-copy {
@@ -722,29 +811,20 @@
         margin: 0;
         color: rgba(227, 207, 165, 0.72);
         text-transform: uppercase;
-        letter-spacing: 0.18em;
-        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        font-size: var(--dashboard-eyebrow-size);
     }
 
     .hero-title,
     .panel-title,
     .state-title {
-        margin: 0.35rem 0 0;
+        margin: 0.24rem 0 0;
         font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
         font-weight: 600;
-        letter-spacing: -0.03em;
+        letter-spacing: -0.02em;
         color: rgba(255, 250, 239, 0.96);
-    }
-
-    .hero-title {
-        font-size: clamp(2.5rem, 5vw, 4.1rem);
-        line-height: 0.96;
-    }
-
-    .panel-title,
-    .state-title {
-        font-size: clamp(1.55rem, 2vw, 2rem);
-        line-height: 1.04;
+        font-size: var(--dashboard-title-size);
+        line-height: 1.1;
     }
 
     .hero-description,
@@ -755,25 +835,23 @@
     .section-note,
     .signal-summary,
     .signal-driver-detail,
-    .source-card-time,
-    .source-card-details,
     .chart-subtitle {
         margin: 0;
         color: rgba(245, 239, 228, 0.62);
-        line-height: 1.55;
+        line-height: 1.45;
+        font-size: var(--dashboard-support-size);
     }
 
     .hero-description {
-        margin-top: 1rem;
+        margin-top: 0.45rem;
         max-width: 34rem;
-        font-size: 0.98rem;
     }
 
     .hero-actions {
         display: flex;
         flex-wrap: wrap;
         justify-content: flex-end;
-        gap: 0.75rem;
+        gap: 0.5rem;
         align-items: center;
     }
 
@@ -783,14 +861,14 @@
     .timeframe-btn {
         display: inline-flex;
         align-items: center;
-        gap: 0.55rem;
+        gap: var(--dashboard-pill-gap);
         border-radius: 999px;
-        font-size: 0.82rem;
+        font-size: var(--dashboard-pill-size);
         letter-spacing: 0.02em;
     }
 
     .meta-pill {
-        padding: 0.8rem 1rem;
+        padding: var(--dashboard-pill-pad-y) var(--dashboard-pill-pad-x);
         color: rgba(249, 244, 236, 0.72);
         background: rgba(255, 255, 255, 0.03);
     }
@@ -805,8 +883,8 @@
     }
 
     .live-dot {
-        width: 0.55rem;
-        height: 0.55rem;
+        width: 0.52rem;
+        height: 0.52rem;
         border-radius: 999px;
         background: rgba(34, 197, 94, 0.65);
         box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
@@ -819,7 +897,7 @@
 
     .refresh-button,
     .notice-action {
-        padding: 0.82rem 1.1rem;
+        padding: var(--dashboard-pill-pad-y) calc(var(--dashboard-pill-pad-x) + 0.08rem);
         background: linear-gradient(180deg, rgba(214, 181, 123, 0.18), rgba(214, 181, 123, 0.1));
         color: rgba(255, 247, 232, 0.95);
         border: 1px solid rgba(214, 181, 123, 0.24);
@@ -863,28 +941,23 @@
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
-        border-radius: 1.25rem;
-        padding: 1rem 1.15rem;
-        margin-bottom: 1.4rem;
+        border-radius: 1rem;
+        padding: 0.85rem 0.95rem;
+        margin-bottom: var(--dashboard-grid-gap);
     }
 
     .content-stack {
         display: grid;
-        gap: 1.4rem;
-    }
-
-    .dashboard-panel {
-        border-radius: 1.5rem;
-        padding: 1.5rem;
+        gap: var(--dashboard-grid-gap);
     }
 
     .panel-head {
         display: flex;
         align-items: flex-end;
         justify-content: space-between;
-        gap: 1rem;
-        padding: 0 0 1.2rem;
-        margin-bottom: 1.35rem;
+        gap: 0.5rem;
+        padding: 0 0 var(--dashboard-panel-head-pad);
+        margin-bottom: var(--dashboard-panel-head-margin);
         border-width: 0 0 1px;
         background: transparent;
         box-shadow: none;
@@ -895,35 +968,35 @@
     }
 
     .panel-caption {
-        max-width: 18rem;
+        max-width: var(--dashboard-caption-max);
         text-align: right;
-        font-size: 0.9rem;
     }
 
     .source-grid,
     .feature-grid,
     .market-grid {
         display: grid;
-        gap: 1rem;
+        gap: var(--dashboard-grid-gap);
     }
 
     .source-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--dashboard-source-gap);
     }
 
     .feature-grid {
-        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
     }
 
     .market-grid {
-        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
     }
 
     .source-card,
     .empty-card,
     .state-card {
-        border-radius: 1.25rem;
-        padding: 1.15rem;
+        border-radius: var(--dashboard-card-radius);
+        padding: var(--dashboard-card-padding);
     }
 
     .source-card {
@@ -933,16 +1006,20 @@
             radial-gradient(circle at top, color-mix(in srgb, var(--source-color, #d6b57b) 14%, transparent), transparent 52%);
     }
 
+    .dashboard-panel-health .source-card {
+        min-height: 92px;
+    }
+
     .source-card-top {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.5rem;
-        margin-bottom: 0.45rem;
+        gap: 0.35rem;
+        margin-bottom: 0.22rem;
     }
 
     .source-card-label {
-        font-size: 0.68rem;
+        font-size: calc(var(--dashboard-card-meta-size) + 0.02rem);
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -950,7 +1027,7 @@
     }
 
     .source-card-status {
-        font-size: 0.55rem;
+        font-size: calc(var(--dashboard-card-meta-size) - 0.02rem);
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
@@ -961,27 +1038,48 @@
     .empty-title {
         margin: 0;
         color: rgba(255, 249, 238, 0.94);
-        font-size: 0.98rem;
-        line-height: 1.35;
+        font-size: var(--dashboard-card-summary-size);
+        line-height: 1.22;
+    }
+
+    .source-card-time,
+    .source-card-details {
+        margin: 0;
+        color: rgba(245, 239, 228, 0.58);
+        font-size: var(--dashboard-card-meta-size);
+        line-height: 1.25;
     }
 
     .source-card-time {
-        margin-top: 0.55rem;
-        font-size: 0.68rem;
+        margin-top: 0.22rem;
     }
 
     .source-card-details {
-        margin-top: 0.7rem;
+        margin-top: 0.28rem;
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
-        font-size: 0.68rem;
+        gap: 0.15rem;
+    }
+
+    .dashboard-panel-health .source-card-top {
+        margin-bottom: 0.16rem;
+    }
+
+    .dashboard-panel-health .source-card-time {
+        margin-top: 0.18rem;
+    }
+
+    .dashboard-panel-health .source-card-details {
+        margin-top: 0.2rem;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.12rem 0.35rem;
     }
 
     .signal-panel,
     .cot-panel {
         display: grid;
-        gap: 0.9rem;
+        gap: 0.65rem;
     }
 
     .signal-header {
@@ -993,15 +1091,15 @@
     .signal-score-row {
         display: flex;
         align-items: flex-start;
-        gap: 1rem;
+        gap: 0.9rem;
     }
 
     .signal-score {
-        font-size: clamp(2.5rem, 5vw, 4rem);
+        font-size: var(--dashboard-score-size);
         line-height: 0.95;
         font-weight: 800;
         color: rgba(255, 250, 242, 0.98);
-        min-width: 5rem;
+        min-width: var(--dashboard-score-min);
         letter-spacing: -0.05em;
     }
 
@@ -1009,7 +1107,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.65rem;
+        gap: 0.45rem;
     }
 
     .signal-badge,
@@ -1017,10 +1115,10 @@
     .cot-lag-tag,
     .cot-stale-tag {
         width: fit-content;
-        font-size: 0.74rem;
+        font-size: 0.62rem;
         font-weight: 700;
-        letter-spacing: 0.12em;
-        padding: 0.42rem 0.7rem;
+        letter-spacing: 0.1em;
+        padding: 0.28rem 0.55rem;
         border-radius: 999px;
         border: 1px solid rgba(214, 181, 123, 0.14);
         text-transform: uppercase;
@@ -1033,7 +1131,7 @@
     }
 
     .signal-score-track {
-        height: 0.5rem;
+        height: 0.45rem;
         border-radius: 999px;
         overflow: hidden;
         background: rgba(255, 255, 255, 0.07);
@@ -1042,17 +1140,17 @@
     .signal-score-fill {
         height: 100%;
         border-radius: inherit;
-        box-shadow: 0 0 22px color-mix(in srgb, currentColor 20%, transparent);
+        box-shadow: 0 0 18px color-mix(in srgb, currentColor 20%, transparent);
     }
 
     .signal-driver-list {
         display: grid;
-        gap: 0.7rem;
+        gap: 0.45rem;
     }
 
     .signal-driver {
-        border-radius: 1rem;
-        padding: 0.9rem 1rem;
+        border-radius: 0.75rem;
+        padding: var(--dashboard-driver-padding-y) var(--dashboard-driver-padding-x);
         background: rgba(255, 255, 255, 0.03);
     }
 
@@ -1060,19 +1158,19 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.75rem;
+        gap: 0.45rem;
     }
 
     .signal-driver-label {
-        font-size: 0.72rem;
+        font-size: 0.64rem;
         font-weight: 700;
         color: rgba(255, 255, 255, 0.78);
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
     }
 
     .signal-driver-impact {
-        font-size: 0.75rem;
+        font-size: 0.62rem;
         font-weight: 700;
         color: rgba(255, 255, 255, 0.45);
     }
@@ -1089,11 +1187,10 @@
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 0.8rem;
+        gap: 0.55rem;
     }
 
     .chart-subtitle {
-        font-size: 0.86rem;
         text-align: right;
     }
 
@@ -1108,8 +1205,8 @@
         border: 1px solid rgba(214, 181, 123, 0.14);
         background: rgba(255, 255, 255, 0.03);
         color: rgba(255, 255, 255, 0.58);
-        padding: 0.48rem 0.82rem;
-        font-size: 0.7rem;
+        padding: 0.4rem 0.72rem;
+        font-size: var(--dashboard-chart-pill-size);
         font-weight: 700;
         letter-spacing: 0.08em;
         cursor: pointer;
@@ -1129,19 +1226,19 @@
     .cot-body {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 0.85rem;
     }
 
     .cot-gauge-svg {
-        width: 120px;
-        height: 72px;
+        width: var(--dashboard-cot-gauge-width);
+        height: var(--dashboard-cot-gauge-height);
         flex-shrink: 0;
     }
 
     .cot-metrics {
         display: flex;
         flex-direction: column;
-        gap: 0.45rem;
+        gap: 0.32rem;
         flex: 1;
     }
 
@@ -1149,18 +1246,18 @@
         display: flex;
         justify-content: space-between;
         align-items: baseline;
-        gap: 1rem;
+        gap: 0.75rem;
     }
 
     .cot-metric-label {
-        font-size: 0.68rem;
+        font-size: var(--dashboard-cot-label-size);
         color: rgba(255, 255, 255, 0.4);
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
     }
 
     .cot-metric-value {
-        font-size: 0.9rem;
+        font-size: var(--dashboard-cot-value-size);
         font-weight: 600;
         color: #f8fafc;
         font-variant-numeric: tabular-nums;
@@ -1179,13 +1276,13 @@
     }
 
     .cot-report-date {
-        margin-top: 0.3rem;
-        font-size: 0.64rem;
+        margin-top: 0.25rem;
+        font-size: var(--dashboard-meta-size);
         color: rgba(255, 255, 255, 0.32);
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 0.4rem;
+        gap: 0.35rem;
     }
 
     .cot-lag-tag {
@@ -1205,14 +1302,14 @@
     }
 
     .section-note {
-        margin-bottom: 1rem;
-        font-size: 0.92rem;
+        margin-bottom: 0.6rem;
+        font-size: var(--dashboard-note-size);
     }
 
     .empty-card,
     .state-card {
         display: grid;
-        gap: 0.8rem;
+        gap: 0.65rem;
     }
 
     .compact-empty-card {
@@ -1240,59 +1337,59 @@
     }
 
     .skeleton-line {
-        height: 0.72rem;
+        height: 0.68rem;
         border-radius: 999px;
     }
 
     .skeleton-line-short {
-        width: 7rem;
+        width: 6.5rem;
     }
 
     .skeleton-line-medium {
-        width: 12rem;
+        width: 10.5rem;
     }
 
     .skeleton-line-caption {
-        width: 10rem;
+        width: 8.5rem;
     }
 
     .skeleton-line-value {
-        width: 6rem;
-        height: 2.2rem;
+        width: 5.75rem;
+        height: 2rem;
     }
 
     .skeleton-card {
         pointer-events: none;
-        min-height: 9.5rem;
+        min-height: 8rem;
     }
 
     .skeleton-panel-body {
         display: grid;
-        gap: 1rem;
+        gap: 0.75rem;
     }
 
     .skeleton-badge {
-        width: 2.8rem;
-        height: 2.8rem;
+        width: 2.4rem;
+        height: 2.4rem;
         border-radius: 999px;
     }
 
     .skeleton-pill {
-        width: 3rem;
-        height: 2rem;
+        width: 2.9rem;
+        height: 1.8rem;
         border-radius: 999px;
     }
 
     .chart-skeleton {
-        height: 16rem;
-        border-radius: 1.2rem;
+        height: 14rem;
+        border-radius: 1rem;
         overflow: hidden;
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(214, 181, 123, 0.08);
     }
 
     .compact-chart-skeleton {
-        height: 12rem;
+        height: 10rem;
     }
 
     .skeleton-chart-grid {
@@ -1320,11 +1417,11 @@
     .macro-skeleton {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.75rem;
+        gap: 0.6rem;
     }
 
     .macro-skeleton-pill {
-        width: 7rem;
+        width: 6.5rem;
     }
 
     @keyframes dashboard-spin {
@@ -1346,7 +1443,7 @@
 
     @media (max-width: 960px) {
         .dashboard-container {
-            padding: 2rem 1.25rem 3rem;
+            padding: 1.25rem 1rem 2rem;
         }
 
         .dashboard-hero,
@@ -1374,7 +1471,10 @@
             text-align: left;
         }
 
-        .source-grid,
+        .source-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .feature-grid,
         .market-grid {
             grid-template-columns: 1fr;
@@ -1383,16 +1483,11 @@
 
     @media (max-width: 640px) {
         .dashboard-container {
-            padding-inline: 1rem;
-        }
-
-        .dashboard-panel,
-        .state-card {
-            padding: 1.1rem;
-        }
-
-        .source-card {
-            padding: 1rem;
+            --dashboard-panel-padding: 0.82rem;
+            --dashboard-panel-radius: 0.9rem;
+            --dashboard-card-padding: 0.58rem;
+            --dashboard-score-size: 1.65rem;
+            padding-inline: 0.95rem;
         }
 
         .signal-score-row,
@@ -1403,6 +1498,12 @@
 
         .signal-score {
             min-width: 0;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .source-grid {
+            grid-template-columns: 1fr;
         }
 
         .cot-gauge-svg {
